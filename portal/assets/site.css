@@ -1,0 +1,165 @@
+:root {
+  --ink: #0f172a;
+  --muted: #64748b;
+  --line: #dbe4ef;
+  --blue: #1454d4;
+  --blue-dark: #08215c;
+  --panel: #ffffff;
+  --bg: #f5f8fc;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  letter-spacing: 0;
+}
+
+a {
+  color: inherit;
+}
+
+.site-header {
+  display: flex;
+  align-items: center;
+  min-height: 64px;
+  padding: 0 24px;
+  background: linear-gradient(135deg, var(--blue-dark), var(--blue));
+  color: #fff;
+  box-shadow: 0 8px 24px rgba(8, 33, 92, 0.18);
+}
+
+.brand {
+  text-decoration: none;
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.portal {
+  width: min(1080px, calc(100vw - 32px));
+  margin: 28px auto 48px;
+}
+
+.banner-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.site-banner {
+  position: relative;
+  display: block;
+  min-height: 260px;
+  overflow: hidden;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 8px;
+  background: var(--panel);
+  text-decoration: none;
+  box-shadow: 0 14px 38px rgba(15, 23, 42, 0.12);
+}
+
+.site-banner img,
+.placeholder {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.banner-shade,
+.placeholder::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+}
+
+.banner-shade {
+  background: linear-gradient(90deg, rgba(3, 10, 24, 0.78), rgba(3, 10, 24, 0.2) 58%, rgba(3, 10, 24, 0.5));
+}
+
+.banner-copy {
+  position: absolute;
+  inset: auto 22px 22px;
+  display: grid;
+  gap: 8px;
+  color: #fff;
+}
+
+.label {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.banner-copy strong {
+  font-size: clamp(24px, 4vw, 42px);
+  line-height: 1.05;
+}
+
+.cta {
+  width: fit-content;
+  margin-top: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.nar-banner {
+  grid-column: span 2;
+}
+
+.nar-banner:hover,
+.nar-banner:focus-visible {
+  transform: translateY(-1px);
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.18);
+}
+
+.disabled-banner {
+  min-height: 180px;
+  filter: grayscale(1);
+  opacity: 0.62;
+}
+
+.placeholder {
+  background:
+    linear-gradient(135deg, rgba(12, 18, 32, 0.82), rgba(107, 114, 128, 0.76)),
+    repeating-linear-gradient(135deg, #cbd5e1 0 12px, #e2e8f0 12px 24px);
+}
+
+.disabled-banner .banner-copy strong {
+  font-size: clamp(22px, 3vw, 34px);
+}
+
+@media (max-width: 720px) {
+  .site-header {
+    padding: 0 18px;
+  }
+
+  .portal {
+    width: min(100vw - 20px, 1080px);
+    margin-top: 18px;
+  }
+
+  .banner-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .nar-banner {
+    grid-column: span 1;
+  }
+
+  .site-banner {
+    min-height: 230px;
+  }
+}
