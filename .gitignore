@@ -1,0 +1,13 @@
+site-dist/
+site/preview*/
+site/debug-*.html
+site/public-*.json
+__pycache__/
+*.pyc
+
+tf/.terraform/
+tf/.terraform.lock.hcl
+tf/*.tfstate
+tf/*.tfstate.*
+tf/*.auto.tfvars
+tf/*.tfvars.local
