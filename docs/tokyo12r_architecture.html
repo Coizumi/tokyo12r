@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TOKYO12R by ZIN Architecture</title>
+  <style>
+    :root {
+      --ink: #17211b;
+      --muted: #5d6b62;
+      --line: #dce5df;
+      --bg: #f5f7f4;
+      --panel: #ffffff;
+      --green: #0a7a4a;
+      --amber: #9a6500;
+      --red: #9f2f2f;
+    }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+      line-height: 1.7;
+    }
+    header {
+      padding: 22px 28px;
+      background: #102018;
+      color: #fff;
+      border-bottom: 4px solid var(--green);
+    }
+    h1 {
+      margin: 0;
+      font-size: 24px;
+    }
+    main {
+      width: min(1180px, calc(100vw - 28px));
+      margin: 20px auto 48px;
+    }
+    section {
+      margin-top: 18px;
+      padding: 18px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    h2 {
+      margin: 0 0 10px;
+      font-size: 18px;
+    }
+    h3 {
+      margin: 14px 0 6px;
+      font-size: 15px;
+    }
+    ul {
+      margin: 8px 0 0;
+      padding-left: 20px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      font-size: 14px;
+    }
+    th,
+    td {
+      border: 1px solid var(--line);
+      padding: 8px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #eef4ef;
+    }
+    code {
+      padding: 2px 5px;
+      border-radius: 4px;
+      background: #eef4ef;
+    }
+    a {
+      color: #075b8f;
+    }
+    .note {
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .badge {
+      display: inline-block;
+      min-width: 4.5em;
+      padding: 1px 6px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      text-align: center;
+      background: #e8f5ee;
+      color: var(--green);
+    }
+    .badge.warn {
+      background: #fff3d8;
+      color: var(--amber);
+    }
+    .badge.stop {
+      background: #fbe6e6;
+      color: var(--red);
+    }
+    .mermaid {
+      overflow-x: auto;
+      padding: 10px;
+      background: #fbfdfb;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>TOKYO12R by ZIN 構成図</h1>
+    <div class="note">JRA向け初期構成案 / 調査更新: 2026-06-23 JST</div>
+  </header>
+  <main>
+    <section>
+      <h2>方針</h2>
+      <ul>
+        <li>「許諾データ」は前提に置かず、JRA公式サイトの公開HTMLを低頻度に取得するスクレイピング構成とする。</li>
+        <li>取得した出走表・馬柱系データは内部予想処理だけに使い、公開サイトには出走表・馬柱を表示しない。</li>
+        <li>公開対象は <code>◎○▲△☆</code> の印、馬名、買い目、更新時刻、開催有無に限定する。</li>
+        <li>一次取得元は <strong>JRA公式</strong>。スポーツナビは開催・結果照合の補助候補に留める。</li>
+        <li>netkeiba、競馬ラボ、新聞社系サイトは、規約・転載制限が強い、または記事/予想コンテンツ中心のため、本番の主取得元にはしない。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>取得元調査サマリー</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>候補</th>
+            <th>判定</th>
+            <th>取得対象としての扱い</th>
+            <th>根拠メモ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><a href="https://www.jra.go.jp/">JRA公式</a></td>
+            <td><span class="badge">主取得元</span></td>
+            <td>開催日程、出馬表、競走馬・騎手・調教師、過去成績、結果照合</td>
+            <td><a href="https://www.jra.go.jp/robots.txt">robots.txt</a> は全体Disallowなし。<a href="https://www.jra.go.jp/use/">利用案内</a>上、掲載物の二次利用には注意が必要なため、公開再掲はせず内部利用に限定する。</td>
+          </tr>
+          <tr>
+            <td><a href="https://sports.yahoo.co.jp/keiba/">スポーツナビ競馬</a></td>
+            <td><span class="badge warn">照合候補</span></td>
+            <td>開催日程、重賞、結果の照合</td>
+            <td>HTMLで日程・結果の一部が読める。<a href="https://www.lycorp.co.jp/ja/company/terms/">LINEヤフー共通利用規約</a>はサービス目的外の再利用を制限しているため、主取得元にはしない。</td>
+          </tr>
+          <tr>
+            <td><a href="https://www.netkeiba.com/">netkeiba</a></td>
+            <td><span class="badge stop">除外</span></td>
+            <td>技術的にはレース一覧・出馬表を取得しやすいが本番取得元にしない</td>
+            <td><a href="https://www.netkeiba.com/info/kiyaku.html">利用規約</a>で、データ等の私的利用範囲外利用や営業利用が制限されている。</td>
+          </tr>
+          <tr>
+            <td><a href="https://www.keibalab.jp/">競馬ラボ</a></td>
+            <td><span class="badge stop">除外</span></td>
+            <td>技術的には特製出馬表が読めるが本番取得元にしない</td>
+            <td><a href="https://www.keibalab.jp/robots.txt">robots.txt</a>上の全面禁止はないが、<a href="https://www.keibalab.jp/info/agreement.html">利用規約</a>とフッターで営利利用・無断複製・転載が制限されている。</td>
+          </tr>
+          <tr>
+            <td><a href="https://www.daily.co.jp/umaya/">デイリー うま屋</a></td>
+            <td><span class="badge warn">保留</span></td>
+            <td>重賞・出走馬・予想記事の確認候補</td>
+            <td><a href="https://www.daily.co.jp/robots.txt">robots.txt</a>は広く許可寄り。ただし新聞社コンテンツで、予想・記事の再利用は避ける。</td>
+          </tr>
+          <tr>
+            <td><a href="https://tospo-keiba.jp/">東スポ競馬</a></td>
+            <td><span class="badge warn">保留</span></td>
+            <td>レース情報の確認候補</td>
+            <td><a href="https://tospo-keiba.jp/robots.txt">robots.txt</a>は一般User-Agentを許可寄りだが、AI系User-Agentはブロック。記事・予想コンテンツの取得元にはしない。</td>
+          </tr>
+          <tr>
+            <td>サンスポ / 日刊スポーツ / スポニチ / 馬トク報知 / 中日スポーツ</td>
+            <td><span class="badge stop">非主力</span></td>
+            <td>ニュース確認のみ。馬柱の主取得元にしない</td>
+            <td>多くが記事中心でAI系やScrapy系をrobotsでブロック。出馬表・馬柱の安定取得元としてはJRA公式より不利。</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="note">判定は法的な保証ではなく、実装リスクを下げるための技術・規約・公開方針上の整理。</p>
+    </section>
+
+    <section>
+      <h2>全体構成</h2>
+      <pre class="mermaid">
+flowchart LR
+  user["利用者<br>ブラウザ"] --> dns["Cloudflare DNS<br>tokyo12r.byzin.win"]
+  dns --> pages["Cloudflare Pages<br>TOKYO12R 静的フロント"]
+  pages --> api["Cloudflare Worker API<br>公開JSON読み出し"]
+  api --> r2["Cloudflare R2<br>jra/latest.json<br>jra/daily/YYYY/MM/DD/*.json"]
+
+  github["GitHub<br>Coizumi/jra"] --> actions["GitHub Actions<br>フロントビルド / Pages deploy"]
+  actions --> pages
+
+  subgraph oci["OCI Always Free Backend"]
+    vm["Compute VM<br>jra-predictor"]
+    timer1["systemd timer<br>09:20 JST 開催確認"]
+    timer2["systemd timer<br>各レース25分前 due check"]
+    fetcher["JRA公式スクレイパ<br>低頻度 / robots確認 / User-Agent明示"]
+    fallback["補助照合<br>スポーツナビ等"]
+    raw["内部raw保存<br>短期保持 / 非公開"]
+    engine["予想エンジン<br>指標化 / 印付け / 買い目生成"]
+    gate["公開データ整形<br>出走表・馬柱を除外"]
+    timer1 --> fetcher
+    timer2 --> fetcher
+    fetcher --> raw
+    fallback -.照合のみ.-> engine
+    raw --> engine
+    engine --> gate
+  end
+
+  jra["JRA公式サイト<br>開催 / 出馬表 / 成績"] --> fetcher
+  sportsnavi["スポーツナビ競馬<br>開催・結果照合候補"] -.-> fallback
+  gate --> r2
+
+  monitor["監視・ログ<br>取得失敗 / 構造変化 / robots差分"] --- fetcher
+  monitor --- api
+      </pre>
+    </section>
+
+    <section>
+      <h2>更新フロー</h2>
+      <pre class="mermaid">
+sequenceDiagram
+  participant Timer as OCI Timer
+  participant Fetcher as JRA Scraper
+  participant Raw as Internal Raw Store
+  participant Engine as Predictor
+  participant Gate as Publish Gate
+  participant R2 as Cloudflare R2
+  participant Worker as Cloudflare Worker API
+  participant Page as Pages Frontend
+  participant User as User
+
+  Timer->>Fetcher: 09:20 JST 開催有無確認
+  Fetcher->>Fetcher: robots.txt / 取得間隔 / 構造差分確認
+  Fetcher->>Raw: 開催日程・対象レース・出走情報を短期保存
+  Raw->>Engine: 予想用特徴量へ変換
+  Engine->>Gate: ◎○▲△☆ と買い目を生成
+  Gate->>Gate: 出走表・馬柱の公開混入を検査
+  Gate->>R2: sanitized latest.json 保存
+
+  loop 各レース発走25分前
+    Timer->>Fetcher: due race check
+    Fetcher->>Raw: 対象レース情報を更新
+    Raw->>Engine: 再計算
+    Engine->>Gate: 印と買い目を更新
+    Gate->>R2: race JSON / daily JSON 保存
+  end
+
+  User->>Page: tokyo12r.byzin.win
+  Page->>Worker: latest.json 取得
+  Worker->>R2: 公開JSON読み出し
+  R2-->>Worker: 印 + 馬名 + 買い目
+  Worker-->>Page: JSON
+  Page-->>User: TOKYO12R 表示
+      </pre>
+    </section>
+
+    <section>
+      <h2>公開データ仕様案</h2>
+      <ul>
+        <li>予想印: <code>◎</code> <code>○</code> <code>▲</code> <code>△</code> <code>☆</code> の5頭。</li>
+        <li>公開馬情報: 馬名と印のみ。馬番は規約・表示方針の確認後に最終判断。</li>
+        <li>買い目: 馬連フォーメーション <code>◎○-○▲△☆</code> 7点。</li>
+        <li>買い目: 3連複BOX <code>◎○▲△☆</code> 10点。</li>
+        <li>買い目: 3連単フォーメーション <code>◎○-◎○▲-◎○▲△☆</code> 12点。</li>
+        <li>買い目: 穴狙い馬単 <code>☆-◎○▲△</code> 4点。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>次の実装単位</h2>
+      <ul>
+        <li>JRA公式の開催日程・出馬表URLパターンを実データで固定する。</li>
+        <li>スクレイパにUser-Agent、取得間隔、robots差分チェック、HTML構造差分アラートを入れる。</li>
+        <li>内部rawと公開JSONを完全に分け、公開前ゲートで出走表・馬柱列が混入しないことを検査する。</li>
+        <li>ダミーデータでフロントを先に作り、実取得処理は段階的に差し込む。</li>
+      </ul>
+    </section>
+  </main>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({ startOnLoad: true, theme: "neutral" });
+  </script>
+</body>
+</html>
