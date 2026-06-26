@@ -503,10 +503,13 @@ def make_picks(horses: list[InternalHorse], popularity_status: str = "中間", r
 
     for horse in horses:
         horse.score = score_horse(horse)
+        if race is not None:
+            horse.sire_fit_score = sire_fit_score(horse.sire_name, race.course)
+            horse.score = round(horse.score + horse.sire_fit_score * 0.08, 3)
     ranked = sorted(horses, key=lambda item: (-item.score, horse_number(item), item.name))[:5]
     picks: list[PublicPick] = []
     for mark, horse in zip(MARKS, ranked):
-        note = "近走・実績指数"
+        note = "近走・実績+血統適性指数" if race is not None else "近走・実績指数"
         picks.append(public_pick(mark, horse, popularity_status, note))
     return picks
 
