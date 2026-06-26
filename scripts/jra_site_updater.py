@@ -22,6 +22,7 @@ from bs4 import BeautifulSoup
 
 BASE_URL = "https://www.jra.go.jp"
 ACCESS_D_URL = f"{BASE_URL}/JRADB/accessD.html"
+ACCESS_S_URL = f"{BASE_URL}/JRADB/accessS.html"
 JST = ZoneInfo("Asia/Tokyo")
 SITE_TITLE = "TOKYO12R by ZIN"
 USER_AGENT = "TOKYO12R-by-ZIN/0.1 (+official-source-check)"
@@ -66,6 +67,7 @@ class PublicRace:
     title: str
     course: str
     official_url: str
+    result_url: str = ""
     odds_status: str = "中間"
     picks: list[PublicPick] = field(default_factory=list)
 
@@ -108,6 +110,16 @@ def extract_cname(href: str) -> str:
         return ""
     parsed = urlparse(urljoin(BASE_URL, href))
     return parse_qs(parsed.query).get("CNAME", [""])[0]
+
+
+def result_url_from_detail_cname(detail_cname: str) -> str:
+    result_cname = detail_cname.replace("pw01dde", "pw01sde", 1)
+    return f"{ACCESS_S_URL}?CNAME={result_cname}" if result_cname else ""
+
+
+def race_anchor_id(race: PublicRace) -> str:
+    venue_key = re.sub(r"[^0-9A-Za-z]+", "-", race.venue).strip("-").lower() or "race"
+    return f"{venue_key}-{race.race_no:02d}r"
 
 
 def fetch_meetings(target_date: dt.date) -> list[tuple[str, str]]:
@@ -157,6 +169,7 @@ def parse_race_list(venue: str, cname: str) -> list[PublicRace]:
                 title=title or f"{race_no}R",
                 course=course,
                 official_url=f"{ACCESS_D_URL}?CNAME={detail_cname}",
+                result_url=result_url_from_detail_cname(detail_cname),
             )
         )
     return races
@@ -619,6 +632,7 @@ def load_public_payload(input_path: Path | None, target_date: dt.date) -> tuple[
                 title=str(item.get("title", "")),
                 course=str(item.get("course", "")),
                 official_url=str(item.get("official_url", "")),
+                result_url=str(item.get("result_url", "")),
                 odds_status=odds_status,
                 picks=picks,
             )
@@ -653,6 +667,14 @@ def render_picks(race: PublicRace) -> str:
             """
         )
     return f'<ol class="picks">{"".join(items)}</ol>'
+
+
+def render_result_button(date_key: str, race: PublicRace) -> str:
+    return (
+        f'<div class="race-actions">'
+        f'<a class="source-link result-link" href="/result{html.escape(date_key)}.html#{html.escape(race_anchor_id(race))}">レース結果</a>'
+        f"</div>"
+    )
 
 
 def render_bets(race: PublicRace) -> str:
@@ -694,6 +716,7 @@ def render_index(date_label: str, date_key: str, races: list[PublicRace], genera
                         <time>{html.escape(race.start_time)}</time>
                       </div>
                       {render_picks(race)}
+                      {render_result_button(date_key, race)}
                       {render_bets(race)}
                     </article>
                     """
@@ -720,7 +743,7 @@ def render_index(date_label: str, date_key: str, races: list[PublicRace], genera
 <body>
   <header class="topbar">
     <a class="brand" href="/">{SITE_TITLE}</a>
-    <nav><a href="https://byzin.win/">by ZIN</a><a href="https://nar.byzin.win/">NAR</a></nav>
+    <nav><a href="/result{html.escape(date_key)}.html">結果</a><a href="https://nar.byzin.win/">NAR</a></nav>
   </header>
   <main>
     <section class="hero-banner" aria-label="TOKYO12R paddock banner">
@@ -735,6 +758,71 @@ def render_index(date_label: str, date_key: str, races: list[PublicRace], genera
       <div>
         <span class="date">{html.escape(date_label)}</span>
         <p>毎開催ごとに予想情報を掲載しています。</p>
+      </div>
+      <div class="badge">更新 {html.escape(generated_at)}</div>
+    </section>
+    {body}
+  </main>
+  <footer>
+    馬券は20歳になってから。
+  </footer>
+</body>
+</html>
+"""
+
+
+def render_results(date_label: str, date_key: str, races: list[PublicRace], generated_at: str) -> str:
+    if not races:
+        body = '<section class="empty">レース結果へのリンクはまだ準備中です。</section>'
+    else:
+        rows = []
+        for race in races:
+            official_result = race.result_url or ""
+            result_link = (
+                f'<a class="source-link result-link" href="{html.escape(official_result)}">JRA公式成績</a>'
+                if official_result
+                else '<span class="source-link result-link disabled" aria-disabled="true">JRA公式成績</span>'
+            )
+            rows.append(
+                f"""
+                <article class="race-card" id="{html.escape(race_anchor_id(race))}">
+                  <div class="race-head">
+                    <span class="race-no">{race.race_no}R</span>
+                    <div>
+                      <h3>{html.escape(race.venue)} {html.escape(race.title)}</h3>
+                      <p>{html.escape(race.course)}</p>
+                    </div>
+                    <time>{html.escape(race.start_time)}</time>
+                  </div>
+                  {render_picks(race)}
+                  <div class="race-actions">
+                    {result_link}
+                  </div>
+                  {render_bets(race)}
+                </article>
+                """
+            )
+        body = f'<section class="result-board">{"".join(rows)}</section>'
+    return f"""<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>結果 {date_key} | {SITE_TITLE}</title>
+  <meta name="description" content="TOKYO12Rの予想印とJRA公式成績へのリンクです。">
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/site.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="https://tokyo12r.byzin.win/">TOKYO12R</a>
+    <nav><a href="https://tokyo12r.byzin.win/">TOKYO12R</a><a href="https://nar.byzin.win/">NAR</a></nav>
+  </header>
+  <main>
+    <section class="summary">
+      <div>
+        <span class="date">結果 {html.escape(date_label)}</span>
+        <p>各レースの予想印とJRA公式成績へのリンクです。</p>
       </div>
       <div class="badge">更新 {html.escape(generated_at)}</div>
     </section>
@@ -785,7 +873,7 @@ main { width:min(1180px, calc(100vw - 24px)); margin:16px auto 40px; }
 .venue h2 { margin:0; font-size:18px; }
 .venue header span { color:var(--muted); font-size:13px; }
 .race-list { display:grid; grid-template-columns:1fr; gap:1px; background:var(--line); }
-.race-card { padding:13px; background:white; min-height:246px; }
+.race-card { padding:13px; background:white; min-height:246px; scroll-margin-top:82px; }
 .race-head { display:grid; grid-template-columns:auto 1fr auto; gap:9px; align-items:start; }
 .race-no { display:inline-grid; place-items:center; min-width:38px; height:30px; border-radius:6px; background:var(--green); color:white; font-weight:800; }
 .race-head h3 { margin:0; font-size:15px; line-height:1.35; }
@@ -797,6 +885,10 @@ main { width:min(1180px, calc(100vw - 24px)); margin:16px auto 40px; }
 .picks b { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .popularity { flex:0 0 auto; border:1px solid #cce8d5; border-radius:999px; padding:3px 6px; background:white; color:var(--deep); font-size:11px; font-weight:800; white-space:nowrap; }
 .mark { display:grid; place-items:center; width:28px; height:28px; border-radius:50%; background:var(--green); color:white; font-weight:900; }
+.race-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:10px; }
+.source-link { display:inline-block; text-decoration:none; border:1px solid #d8a325; border-radius:6px; padding:7px 10px; background:#fff1bd; color:#7a5600; font-size:13px; font-weight:800; }
+.result-link.disabled { border-color:#d6dbe1; background:#eef1f4; color:#8d96a1; cursor:not-allowed; pointer-events:none; }
+.result-board { display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:14px; margin-top:14px; }
 .bets { display:grid; gap:6px; margin:10px 0 0; padding:0; list-style:none; }
 .bets li { display:grid; grid-template-columns:1fr auto; gap:5px 8px; padding:7px; border-radius:7px; background:#fff8e5; border:1px solid #f0deb0; font-size:12px; }
 .bets strong { color:#4d3a05; }
@@ -827,6 +919,7 @@ def generate(output: Path, target_date: dt.date, races: list[PublicRace], genera
     write_assets(output)
     payload = public_payload(target_date, generated_at, races)
     (output / "index.html").write_text(render_index(date_label, date_key, races, generated_at), encoding="utf-8")
+    (output / f"result{date_key}.html").write_text(render_results(date_label, date_key, races, generated_at), encoding="utf-8")
     (output / f"public-data{date_key}.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     (output / "robots.txt").write_text("User-agent: *\nAllow: /\n", encoding="utf-8")
     (output / "sitemap.xml").write_text(
@@ -834,6 +927,10 @@ def generate(output: Path, target_date: dt.date, races: list[PublicRace], genera
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://tokyo12r.byzin.win/</loc>
+    <lastmod>{target_date.isoformat()}</lastmod>
+  </url>
+  <url>
+    <loc>https://tokyo12r.byzin.win/result{date_key}.html</loc>
     <lastmod>{target_date.isoformat()}</lastmod>
   </url>
 </urlset>
