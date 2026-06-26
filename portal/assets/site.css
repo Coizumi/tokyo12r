@@ -55,7 +55,7 @@ a {
 .site-banner {
   position: relative;
   display: block;
-  min-height: 260px;
+  min-height: 180px;
   overflow: hidden;
   border: 1px solid rgba(15, 23, 42, 0.1);
   border-radius: 8px;
@@ -114,20 +114,12 @@ a {
   font-weight: 700;
 }
 
-.nar-banner {
-  grid-column: span 2;
-}
-
 .nar-banner:hover,
 .nar-banner:focus-visible,
 .jra-banner:hover,
 .jra-banner:focus-visible {
   transform: translateY(-1px);
   box-shadow: 0 18px 44px rgba(15, 23, 42, 0.18);
-}
-
-.jra-banner {
-  min-height: 180px;
 }
 
 .jra-banner img {
@@ -153,11 +145,7 @@ a {
     gap: 12px;
   }
 
-  .nar-banner {
-    grid-column: span 1;
-  }
-
   .site-banner {
-    min-height: 230px;
+    min-height: 180px;
   }
 }
