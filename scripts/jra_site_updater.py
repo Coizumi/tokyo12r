@@ -12,6 +12,7 @@ import time
 from dataclasses import dataclass, field
 from itertools import combinations, product
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urljoin, urlparse
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
@@ -63,19 +64,31 @@ def normalize_text(value: str) -> str:
 
 def jra_post(cname: str) -> str:
     body = f"cname={cname}".encode("ascii")
-    request = Request(
-        ACCESS_D_URL,
-        data=body,
-        headers={
-            "User-Agent": USER_AGENT,
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Referer": f"{BASE_URL}/keiba/",
-        },
-        method="POST",
-    )
-    with urlopen(request, timeout=30) as response:
-        raw = response.read()
-    return raw.decode("shift_jis", errors="replace")
+    last_error: Exception | None = None
+    for attempt in range(5):
+        request = Request(
+            ACCESS_D_URL,
+            data=body,
+            headers={
+                "User-Agent": USER_AGENT,
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Referer": f"{BASE_URL}/keiba/",
+            },
+            method="POST",
+        )
+        try:
+            with urlopen(request, timeout=30) as response:
+                raw = response.read()
+            return raw.decode("shift_jis", errors="replace")
+        except HTTPError as exc:
+            last_error = exc
+            if exc.code not in {429, 500, 502, 503, 504}:
+                raise
+        except URLError as exc:
+            last_error = exc
+        time.sleep(1.5 * (attempt + 1))
+    assert last_error is not None
+    raise last_error
 
 
 def extract_cname(href: str) -> str:
