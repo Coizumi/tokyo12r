@@ -100,6 +100,8 @@ jobs:
             --data-urlencode "type=CNAME" \
             --data-urlencode "name=${record_name}")
           record_id=$(echo "$record_response" | jq -r '.result[0].id // empty')
+          current_content=$(echo "$record_response" | jq -r '.result[0].content // empty')
+          current_proxied=$(echo "$record_response" | jq -r '.result[0].proxied // empty')
           payload=$(jq -n \
             --arg type "CNAME" \
             --arg name "$record_name" \
@@ -107,11 +109,15 @@ jobs:
             '{type:$type,name:$name,content:$content,ttl:1,proxied:true}')
 
           if [ -n "$record_id" ]; then
-            curl --fail-with-body --silent --show-error --request PUT \
-              "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records/${record_id}" \
-              --header "$auth_header" \
-              --header "Content-Type: application/json" \
-              --data "$payload"
+            if [ "$current_content" = "$record_content" ] && [ "$current_proxied" = "true" ]; then
+              echo "${record_name} already points to ${record_content}."
+            else
+              curl --fail-with-body --silent --show-error --request PUT \
+                "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records/${record_id}" \
+                --header "$auth_header" \
+                --header "Content-Type: application/json" \
+                --data "$payload"
+            fi
           else
             curl --fail-with-body --silent --show-error --request POST \
               "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records" \
