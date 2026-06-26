@@ -64,6 +64,51 @@ jobs:
             --project-name=tokyo12r \
             --branch="${GITHUB_REF_NAME:-main}"
 
+      - name: Ensure DNS record
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          auth_header="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+          zone_response=$(curl --fail-with-body --silent --show-error --get \
+            "https://api.cloudflare.com/client/v4/zones" \
+            --header "$auth_header" \
+            --header "Content-Type: application/json" \
+            --data-urlencode "name=byzin.win")
+          zone_id=$(echo "$zone_response" | jq -r '.result[0].id // empty')
+          if [ -z "$zone_id" ]; then
+            echo "Cloudflare zone byzin.win was not found."
+            exit 1
+          fi
+
+          record_name="tokyo12r.byzin.win"
+          record_content="tokyo12r.pages.dev"
+          record_response=$(curl --fail-with-body --silent --show-error --get \
+            "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records" \
+            --header "$auth_header" \
+            --header "Content-Type: application/json" \
+            --data-urlencode "type=CNAME" \
+            --data-urlencode "name=${record_name}")
+          record_id=$(echo "$record_response" | jq -r '.result[0].id // empty')
+          payload=$(jq -n \
+            --arg type "CNAME" \
+            --arg name "$record_name" \
+            --arg content "$record_content" \
+            '{type:$type,name:$name,content:$content,ttl:1,proxied:true}')
+
+          if [ -n "$record_id" ]; then
+            curl --fail-with-body --silent --show-error --request PUT \
+              "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records/${record_id}" \
+              --header "$auth_header" \
+              --header "Content-Type: application/json" \
+              --data "$payload"
+          else
+            curl --fail-with-body --silent --show-error --request POST \
+              "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records" \
+              --header "$auth_header" \
+              --header "Content-Type: application/json" \
+              --data "$payload"
+          fi
+
       - name: Ensure custom domain
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
