@@ -32,6 +32,7 @@ MARKS = ["◎", "○", "▲", "△", "☆"]
 class InternalHorse:
     number: str
     name: str
+    popularity_rank: int | None = None
     sex_age: str = ""
     jockey: str = ""
     record: str = ""
@@ -44,6 +45,8 @@ class InternalHorse:
 class PublicPick:
     mark: str
     name: str
+    popularity_rank: int | None
+    popularity_status: str
     score: float
     note: str
 
@@ -56,6 +59,7 @@ class PublicRace:
     title: str
     course: str
     official_url: str
+    odds_status: str = "中間"
     picks: list[PublicPick] = field(default_factory=list)
 
 
@@ -158,6 +162,28 @@ def fetch_detail_html(official_url: str) -> str:
     return jra_post(cname)
 
 
+def parse_start_datetime(target_date: dt.date, start_time: str) -> dt.datetime | None:
+    match = re.search(r"(\d{1,2})\D+(\d{2})", start_time or "")
+    if not match:
+        return None
+    return dt.datetime(
+        target_date.year,
+        target_date.month,
+        target_date.day,
+        int(match.group(1)),
+        int(match.group(2)),
+        tzinfo=JST,
+    )
+
+
+def odds_status_for_race(target_date: dt.date, start_time: str, now: dt.datetime | None = None) -> str:
+    start_at = parse_start_datetime(target_date, start_time)
+    if start_at is None:
+        return "中間"
+    current = now or dt.datetime.now(JST)
+    return "確定" if current >= start_at else "中間"
+
+
 def yen_value(text: str) -> int:
     cleaned = text.replace(",", "")
     if "億" in cleaned:
@@ -185,6 +211,8 @@ def parse_horses(detail_html: str) -> list[InternalHorse]:
         name = normalize_text(name_node.get_text(" ", strip=True) if name_node else "")
         if not name:
             continue
+        horse_text = normalize_text(horse_cell.get_text(" ", strip=True))
+        popularity_match = re.search(r"\((\d+)\s*番人気\s*\)", horse_text)
         win_node = horse_cell.select_one(".cell.win")
         prize_text = win_node.get("title") if win_node and win_node.get("title") else (win_node.get_text(" ", strip=True) if win_node else "")
         result_node = horse_cell.select_one(".cell.result")
@@ -195,6 +223,7 @@ def parse_horses(detail_html: str) -> list[InternalHorse]:
             InternalHorse(
                 number=number,
                 name=name,
+                popularity_rank=int(popularity_match.group(1)) if popularity_match else None,
                 sex_age=sex_age,
                 jockey=jockey,
                 record=normalize_text(result_node.get_text(" ", strip=True) if result_node else ""),
@@ -234,7 +263,7 @@ def score_horse(horse: InternalHorse) -> float:
     return round(score, 3)
 
 
-def make_picks(horses: list[InternalHorse]) -> list[PublicPick]:
+def make_picks(horses: list[InternalHorse], popularity_status: str = "中間") -> list[PublicPick]:
     for horse in horses:
         horse.score = score_horse(horse)
     ranked = sorted(horses, key=lambda item: (-item.score, int(item.number), item.name))[:5]
@@ -243,7 +272,16 @@ def make_picks(horses: list[InternalHorse]) -> list[PublicPick]:
         note = "近走・実績指数"
         if horse.record:
             note = f"近走・実績指数 / {horse.record}"
-        picks.append(PublicPick(mark=mark, name=horse.name, score=horse.score, note=note))
+        picks.append(
+            PublicPick(
+                mark=mark,
+                name=horse.name,
+                popularity_rank=horse.popularity_rank,
+                popularity_status=popularity_status,
+                score=horse.score,
+                note=note,
+            )
+        )
     return picks
 
 
@@ -254,9 +292,10 @@ def fetch_official_races(target_date: dt.date, delay_seconds: float = 0.45) -> l
         time.sleep(delay_seconds)
         venue_races = parse_race_list(venue, meeting_cname)
         for race in venue_races:
+            race.odds_status = odds_status_for_race(target_date, race.start_time)
             time.sleep(delay_seconds)
             horses = parse_horses(fetch_detail_html(race.official_url))
-            race.picks = make_picks(horses)
+            race.picks = make_picks(horses, race.odds_status)
         races.extend(venue_races)
     return races
 
@@ -318,7 +357,16 @@ def public_payload(date: dt.date, generated_at: str, races: list[PublicRace]) ->
                 "start_time": race.start_time,
                 "title": race.title,
                 "course": race.course,
-                "picks": [{"mark": pick.mark, "name": pick.name} for pick in race.picks],
+                "odds_status": race.odds_status,
+                "picks": [
+                    {
+                        "mark": pick.mark,
+                        "name": pick.name,
+                        "popularity_rank": pick.popularity_rank,
+                        "popularity_status": pick.popularity_status,
+                    }
+                    for pick in race.picks
+                ],
                 "bets": bet_sections(race.picks),
             }
             for race in races
@@ -332,7 +380,18 @@ def load_public_payload(input_path: Path | None, target_date: dt.date) -> tuple[
     payload = json.loads(input_path.read_text(encoding="utf-8"))
     races: list[PublicRace] = []
     for item in payload.get("races", []):
-        picks = [PublicPick(mark=str(pick.get("mark", "")), name=str(pick.get("name", "")), score=0.0, note="") for pick in item.get("picks", [])]
+        odds_status = str(item.get("odds_status", "中間"))
+        picks = [
+            PublicPick(
+                mark=str(pick.get("mark", "")),
+                name=str(pick.get("name", "")),
+                popularity_rank=int(pick["popularity_rank"]) if pick.get("popularity_rank") else None,
+                popularity_status=str(pick.get("popularity_status", odds_status)),
+                score=0.0,
+                note="",
+            )
+            for pick in item.get("picks", [])
+        ]
         races.append(
             PublicRace(
                 venue=str(item.get("venue", "")),
@@ -341,6 +400,7 @@ def load_public_payload(input_path: Path | None, target_date: dt.date) -> tuple[
                 title=str(item.get("title", "")),
                 course=str(item.get("course", "")),
                 official_url=str(item.get("official_url", "")),
+                odds_status=odds_status,
                 picks=picks,
             )
         )
@@ -362,11 +422,14 @@ def render_picks(race: PublicRace) -> str:
         return '<div class="picks muted">予想は準備中です。</div>'
     items = []
     for pick in race.picks:
+        popularity = ""
+        if pick.popularity_rank:
+            popularity = f'<span class="popularity">{pick.popularity_rank} 人気（{html.escape(pick.popularity_status)}）</span>'
         items.append(
             f"""
             <li>
               <span class="mark">{html.escape(pick.mark)}</span>
-              <b>{html.escape(pick.name)}</b>
+              <span class="pick-line"><b>{html.escape(pick.name)}</b>{popularity}</span>
             </li>
             """
         )
@@ -424,7 +487,7 @@ def render_index(date_label: str, date_key: str, races: list[PublicRace], genera
                 </section>
                 """
             )
-        body = "".join(sections)
+        body = f'<div class="venue-board venue-count-{len(venues)}">{"".join(sections)}</div>'
     return f"""<!doctype html>
 <html lang="ja">
 <head>
@@ -494,11 +557,15 @@ main { width:min(1180px, calc(100vw - 24px)); margin:16px auto 40px; }
 .summary p { margin:4px 0 0; color:var(--muted); }
 .date { font-weight:800; font-size:22px; }
 .badge { white-space:nowrap; border-radius:999px; padding:8px 10px; background:#edf8ef; color:var(--deep); font-size:13px; border:1px solid #cce8d5; }
-.venue { margin-top:14px; background:var(--panel); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+.venue-board { display:grid; gap:14px; margin-top:14px; align-items:start; }
+.venue-count-1 { grid-template-columns:minmax(0, 1fr); }
+.venue-count-2 { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+.venue-count-3 { grid-template-columns:repeat(3, minmax(0, 1fr)); }
+.venue { background:var(--panel); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
 .venue > header { display:flex; justify-content:space-between; align-items:center; padding:12px 14px; border-bottom:1px solid var(--line); background:#f9fcfa; }
 .venue h2 { margin:0; font-size:18px; }
 .venue header span { color:var(--muted); font-size:13px; }
-.race-list { display:grid; grid-template-columns:repeat(auto-fit, minmax(310px, 1fr)); gap:1px; background:var(--line); }
+.race-list { display:grid; grid-template-columns:1fr; gap:1px; background:var(--line); }
 .race-card { padding:13px; background:white; min-height:246px; }
 .race-head { display:grid; grid-template-columns:auto 1fr auto; gap:9px; align-items:start; }
 .race-no { display:inline-grid; place-items:center; min-width:38px; height:30px; border-radius:6px; background:var(--green); color:white; font-weight:800; }
@@ -507,7 +574,9 @@ main { width:min(1180px, calc(100vw - 24px)); margin:16px auto 40px; }
 .race-head time { color:var(--deep); font-weight:800; white-space:nowrap; }
 .picks { display:grid; gap:6px; margin:12px 0 0; padding:0; list-style:none; }
 .picks li { display:grid; grid-template-columns:30px minmax(0,1fr); gap:7px; align-items:center; padding:7px; border:1px solid #d6eadc; border-radius:7px; background:#f8fcf9; }
-.picks b { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.pick-line { min-width:0; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.picks b { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.popularity { flex:0 0 auto; border:1px solid #cce8d5; border-radius:999px; padding:3px 6px; background:white; color:var(--deep); font-size:11px; font-weight:800; white-space:nowrap; }
 .mark { display:grid; place-items:center; width:28px; height:28px; border-radius:50%; background:var(--green); color:white; font-weight:900; }
 .bets { display:grid; gap:6px; margin:10px 0 0; padding:0; list-style:none; }
 .bets li { display:grid; grid-template-columns:1fr auto; gap:5px 8px; padding:7px; border-radius:7px; background:#fff8e5; border:1px solid #f0deb0; font-size:12px; }
@@ -517,7 +586,9 @@ main { width:min(1180px, calc(100vw - 24px)); margin:16px auto 40px; }
 .muted, .empty { color:var(--muted); }
 .empty { margin-top:14px; padding:28px; background:white; border:1px solid var(--line); border-radius:8px; text-align:center; }
 footer { width:min(1180px, calc(100vw - 24px)); margin:0 auto 32px; color:var(--muted); font-size:12px; line-height:1.7; }
-@media (max-width:640px) { .topbar,.summary { align-items:flex-start; flex-direction:column; } nav { width:100%; } nav a { flex:1; text-align:center; } .hero-banner { min-height:180px; aspect-ratio:16 / 9; } .hero-copy { left:16px; bottom:16px; } .race-list { grid-template-columns:1fr; } }
+@media (max-width:960px) { .venue-count-3 { grid-template-columns:1fr; } }
+@media (max-width:760px) { .venue-count-2 { grid-template-columns:1fr; } }
+@media (max-width:640px) { .topbar,.summary { align-items:flex-start; flex-direction:column; } nav { width:100%; } nav a { flex:1; text-align:center; } .hero-banner { min-height:180px; aspect-ratio:16 / 9; } .hero-copy { left:16px; bottom:16px; } }
 """.strip()
         + "\n",
         encoding="utf-8",
