@@ -130,11 +130,8 @@ a {
   min-height: 180px;
 }
 
-.placeholder {
-  background:
-    radial-gradient(circle at 82% 18%, rgba(200, 163, 66, 0.72), transparent 28%),
-    linear-gradient(135deg, rgba(0, 75, 43, 0.92), rgba(0, 122, 61, 0.76)),
-    repeating-linear-gradient(135deg, #0d5b34 0 12px, #0f6b3d 12px 24px);
+.jra-banner img {
+  object-position: center 48%;
 }
 
 .jra-banner .banner-copy strong {

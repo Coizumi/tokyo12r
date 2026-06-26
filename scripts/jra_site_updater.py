@@ -24,6 +24,7 @@ ACCESS_D_URL = f"{BASE_URL}/JRADB/accessD.html"
 JST = ZoneInfo("Asia/Tokyo")
 SITE_TITLE = "TOKYO12R by ZIN"
 USER_AGENT = "TOKYO12R-by-ZIN/0.1 (+official-source-check)"
+BANNER_ASSET_NAME = "tokyo12r-paddock-banner.jpg"
 MARKS = ["◎", "○", "▲", "△", "☆"]
 
 
@@ -440,6 +441,14 @@ def render_index(date_label: str, date_key: str, races: list[PublicRace], genera
     <nav><a href="https://byzin.win/">by ZIN</a><a href="https://nar.byzin.win/">NAR</a></nav>
   </header>
   <main>
+    <section class="hero-banner" aria-label="TOKYO12R paddock banner">
+      <img src="/assets/{BANNER_ASSET_NAME}" alt="">
+      <div class="hero-shade"></div>
+      <div class="hero-copy">
+        <span>JRA Forecast</span>
+        <strong>{SITE_TITLE}</strong>
+      </div>
+    </section>
     <section class="summary">
       <div>
         <span class="date">{html.escape(date_label)}</span>
@@ -460,6 +469,9 @@ def render_index(date_label: str, date_key: str, races: list[PublicRace], genera
 def write_assets(output: Path) -> None:
     assets = output / "assets"
     assets.mkdir(parents=True, exist_ok=True)
+    banner_source = Path(__file__).resolve().parent.parent / "assets" / BANNER_ASSET_NAME
+    if banner_source.exists():
+        shutil.copy2(banner_source, assets / BANNER_ASSET_NAME)
     (assets / "favicon.svg").write_text(favicon_svg(), encoding="utf-8")
     (assets / "site.css").write_text(
         """
@@ -472,6 +484,12 @@ a { color:inherit; }
 nav { display:flex; gap:8px; }
 nav a { text-decoration:none; border:1px solid rgba(255,255,255,.65); border-radius:6px; padding:7px 10px; font-size:13px; }
 main { width:min(1180px, calc(100vw - 24px)); margin:16px auto 40px; }
+.hero-banner { position:relative; min-height:210px; max-height:300px; aspect-ratio:3 / 1; overflow:hidden; border-radius:8px; border:1px solid var(--line); background:#0d3f24; }
+.hero-banner img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; object-position:center 48%; }
+.hero-shade { position:absolute; inset:0; background:linear-gradient(90deg, rgba(0,24,12,.76), rgba(0,24,12,.16) 58%, rgba(0,24,12,.42)); }
+.hero-copy { position:absolute; left:22px; bottom:20px; display:grid; gap:6px; color:white; }
+.hero-copy span { color:rgba(255,255,255,.72); font-size:12px; font-weight:800; text-transform:uppercase; }
+.hero-copy strong { font-size:clamp(28px, 5vw, 54px); line-height:1; }
 .summary { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:16px; background:var(--panel); border:1px solid var(--line); border-radius:8px; }
 .summary p { margin:4px 0 0; color:var(--muted); }
 .date { font-weight:800; font-size:22px; }
@@ -499,7 +517,7 @@ main { width:min(1180px, calc(100vw - 24px)); margin:16px auto 40px; }
 .muted, .empty { color:var(--muted); }
 .empty { margin-top:14px; padding:28px; background:white; border:1px solid var(--line); border-radius:8px; text-align:center; }
 footer { width:min(1180px, calc(100vw - 24px)); margin:0 auto 32px; color:var(--muted); font-size:12px; line-height:1.7; }
-@media (max-width:640px) { .topbar,.summary { align-items:flex-start; flex-direction:column; } nav { width:100%; } nav a { flex:1; text-align:center; } .race-list { grid-template-columns:1fr; } }
+@media (max-width:640px) { .topbar,.summary { align-items:flex-start; flex-direction:column; } nav { width:100%; } nav a { flex:1; text-align:center; } .hero-banner { min-height:180px; aspect-ratio:16 / 9; } .hero-copy { left:16px; bottom:16px; } .race-list { grid-template-columns:1fr; } }
 """.strip()
         + "\n",
         encoding="utf-8",

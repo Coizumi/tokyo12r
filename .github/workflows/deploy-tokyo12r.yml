@@ -11,6 +11,7 @@ on:
     branches:
       - main
     paths:
+      - "assets/**"
       - "scripts/jra_site_updater.py"
       - ".github/workflows/deploy-tokyo12r.yml"
 
