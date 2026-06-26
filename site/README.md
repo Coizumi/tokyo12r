@@ -30,8 +30,9 @@ python3 scripts/jra_site_updater.py --output site-dist --input site-dist/public-
 Deployment:
 
 - GitHub Actions deploys `site-dist` to the Cloudflare Pages project `tokyo12r`.
-- The workflow token is for Pages deployment only and does not edit DNS records.
-- Add `tokyo12r.byzin.win` as a Pages custom domain.
-- In the `byzin.win` Cloudflare zone, create a proxied CNAME:
+- `CLOUDFLARE_API_TOKEN` is used for Pages deployment.
+- `CLOUDFLARE_DNS_API_TOKEN` is used only for the `byzin.win` DNS record.
+- The workflow registers `tokyo12r.byzin.win` as a Pages custom domain.
+- The workflow also upserts this proxied CNAME in the `byzin.win` zone:
   - Name: `tokyo12r`
   - Target: `tokyo12r.pages.dev`
