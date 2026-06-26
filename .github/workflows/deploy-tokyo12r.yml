@@ -76,6 +76,7 @@ jobs:
             --data '{"name":"tokyo12r.byzin.win"}' || true
 
       - name: Ensure DNS record
+        continue-on-error: true
         env:
           CLOUDFLARE_DNS_API_TOKEN: ${{ secrets.CLOUDFLARE_DNS_API_TOKEN }}
         run: |

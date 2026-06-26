@@ -36,3 +36,9 @@ Deployment:
 - The workflow also upserts this proxied CNAME in the `byzin.win` zone:
   - Name: `tokyo12r`
   - Target: `tokyo12r.pages.dev`
+
+For automatic DNS updates from GitHub Actions, `CLOUDFLARE_DNS_API_TOKEN`
+must be usable from GitHub-hosted runner IPs and needs:
+
+- Zone: Zone: Read
+- Zone: DNS: Edit
