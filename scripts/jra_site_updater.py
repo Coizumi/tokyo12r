@@ -423,10 +423,6 @@ def parse_horses(detail_html: str) -> list[InternalHorse]:
 
 def score_horse(horse: InternalHorse) -> float:
     score = math.log10(max(horse.prize_yen, 1)) * 2.1 if horse.prize_yen else 0.0
-    record_numbers = [int(value) for value in re.findall(r"\d+", horse.record)]
-    if len(record_numbers) >= 4:
-        wins, seconds, thirds, starts = record_numbers[:4]
-        score += wins * 3.4 + seconds * 2.0 + thirds * 1.2 - starts * 0.16
     weights = [1.0, 0.72, 0.52, 0.36]
     for weight, text in zip(weights, horse.past_texts):
         place_match = re.search(r"(\d+)\s*着", text)
@@ -511,8 +507,6 @@ def make_picks(horses: list[InternalHorse], popularity_status: str = "中間", r
     picks: list[PublicPick] = []
     for mark, horse in zip(MARKS, ranked):
         note = "近走・実績指数"
-        if horse.record:
-            note = f"近走・実績指数 / {horse.record}"
         picks.append(public_pick(mark, horse, popularity_status, note))
     return picks
 
