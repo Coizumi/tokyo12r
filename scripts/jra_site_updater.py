@@ -247,6 +247,17 @@ def fetch_official_races(target_date: dt.date, delay_seconds: float = 0.45) -> l
     return races
 
 
+def fetch_next_available_races(start_date: dt.date, delay_seconds: float = 0.45, days: int = 4) -> tuple[dt.date, list[PublicRace]]:
+    last_races: list[PublicRace] = []
+    for offset in range(days):
+        candidate = start_date + dt.timedelta(days=offset)
+        races = fetch_official_races(candidate, delay_seconds)
+        if races:
+            return candidate, races
+        last_races = races
+    return start_date, last_races
+
+
 def pick_lookup(picks: list[PublicPick]) -> dict[str, PublicPick]:
     return {pick.mark: pick for pick in picks}
 
@@ -522,7 +533,7 @@ def main() -> int:
     target_date = dt.date.fromisoformat(args.date)
     generated_at = dt.datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S JST")
     if args.fetch_official:
-        races = fetch_official_races(target_date, args.delay)
+        target_date, races = fetch_next_available_races(target_date, args.delay)
     else:
         races, loaded_generated_at = load_public_payload(args.input, target_date)
         generated_at = loaded_generated_at or generated_at
