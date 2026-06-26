@@ -4,6 +4,8 @@ site/debug-*.html
 site/public-*.json
 __pycache__/
 *.pyc
+var/
+logs/
 
 tf/.terraform/
 tf/.terraform.lock.hcl

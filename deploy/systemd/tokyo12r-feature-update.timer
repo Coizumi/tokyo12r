@@ -1,0 +1,15 @@
+[Unit]
+Description=Schedule TOKYO12R JRA feature updates
+
+[Timer]
+OnCalendar=Fri *-*-* 22:00:00
+OnCalendar=Sat *-*-* 09..17:32:00
+OnCalendar=Sun *-*-* 09..17:32:00
+OnCalendar=Mon *-*-* 09..17:32:00
+OnCalendar=Tue *-*-* 09..17:32:00
+Persistent=true
+RandomizedDelaySec=0
+Unit=tokyo12r-feature-update.service
+
+[Install]
+WantedBy=timers.target
