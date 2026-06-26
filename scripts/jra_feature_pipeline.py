@@ -11,7 +11,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 JST = ZoneInfo("Asia/Tokyo")
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -97,6 +97,82 @@ def init_schema(connection: sqlite3.Connection) -> None:
             PRIMARY KEY (race_id, horse_id),
             FOREIGN KEY (race_id, horse_id)
                 REFERENCES race_entries(race_id, horse_id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS predictions (
+            race_id TEXT NOT NULL,
+            horse_id TEXT NOT NULL,
+            mark TEXT NOT NULL,
+            horse_number INTEGER,
+            horse_name TEXT NOT NULL,
+            popularity_rank INTEGER,
+            popularity_status TEXT NOT NULL DEFAULT '',
+            generated_at TEXT NOT NULL,
+            PRIMARY KEY (race_id, mark),
+            FOREIGN KEY (race_id) REFERENCES races(race_id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS bet_tickets (
+            race_id TEXT NOT NULL,
+            bet_type TEXT NOT NULL,
+            ticket_key TEXT NOT NULL,
+            stake_yen INTEGER NOT NULL DEFAULT 100,
+            generated_at TEXT NOT NULL,
+            PRIMARY KEY (race_id, bet_type, ticket_key),
+            FOREIGN KEY (race_id) REFERENCES races(race_id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS race_results (
+            race_id TEXT NOT NULL,
+            finish_position INTEGER NOT NULL,
+            horse_id TEXT NOT NULL DEFAULT '',
+            horse_number INTEGER,
+            horse_name TEXT NOT NULL,
+            result_status TEXT NOT NULL DEFAULT 'confirmed',
+            source_url TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (race_id, finish_position),
+            FOREIGN KEY (race_id) REFERENCES races(race_id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS payouts (
+            race_id TEXT NOT NULL,
+            bet_type TEXT NOT NULL,
+            ticket_key TEXT NOT NULL,
+            payout_yen INTEGER NOT NULL,
+            popularity TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (race_id, bet_type, ticket_key),
+            FOREIGN KEY (race_id) REFERENCES races(race_id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS bet_outcomes (
+            race_id TEXT NOT NULL,
+            bet_type TEXT NOT NULL,
+            ticket_key TEXT NOT NULL,
+            is_hit INTEGER NOT NULL,
+            stake_yen INTEGER NOT NULL,
+            payout_yen INTEGER NOT NULL,
+            profit_yen INTEGER NOT NULL,
+            evaluated_at TEXT NOT NULL,
+            PRIMARY KEY (race_id, bet_type, ticket_key),
+            FOREIGN KEY (race_id) REFERENCES races(race_id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS performance_summaries (
+            period_type TEXT NOT NULL,
+            period_key TEXT NOT NULL,
+            bet_type TEXT NOT NULL,
+            races INTEGER NOT NULL,
+            tickets INTEGER NOT NULL,
+            hits INTEGER NOT NULL,
+            stake_yen INTEGER NOT NULL,
+            payout_yen INTEGER NOT NULL,
+            profit_yen INTEGER NOT NULL,
+            hit_rate REAL NOT NULL,
+            roi REAL NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (period_type, period_key, bet_type)
         );
 
         CREATE TABLE IF NOT EXISTS pipeline_runs (
@@ -228,6 +304,87 @@ def refresh_runner_features(connection: sqlite3.Connection, generated_at: str) -
     return written
 
 
+def period_keys(race_date: str) -> dict[str, str]:
+    parsed = dt.date.fromisoformat(race_date)
+    iso_year, iso_week, _ = parsed.isocalendar()
+    return {
+        "weekly": f"{iso_year}-W{iso_week:02d}",
+        "monthly": parsed.strftime("%Y-%m"),
+        "yearly": parsed.strftime("%Y"),
+    }
+
+
+def refresh_performance_summaries(connection: sqlite3.Connection, updated_at: str) -> int:
+    rows = connection.execute(
+        """
+        SELECT r.race_date, o.race_id, o.bet_type, o.is_hit,
+               o.stake_yen, o.payout_yen, o.profit_yen
+        FROM bet_outcomes o
+        JOIN races r ON r.race_id = o.race_id
+        """
+    ).fetchall()
+    aggregates: dict[tuple[str, str, str], dict[str, object]] = {}
+    for row in rows:
+        for period_type, period_key in period_keys(str(row["race_date"])).items():
+            key = (period_type, period_key, str(row["bet_type"]))
+            item = aggregates.setdefault(
+                key,
+                {
+                    "tickets": 0,
+                    "hits": 0,
+                    "stake_yen": 0,
+                    "payout_yen": 0,
+                    "profit_yen": 0,
+                    "race_ids": set(),
+                },
+            )
+            item["tickets"] = int(item["tickets"]) + 1
+            item["hits"] = int(item["hits"]) + int(row["is_hit"])
+            item["stake_yen"] = int(item["stake_yen"]) + int(row["stake_yen"])
+            item["payout_yen"] = int(item["payout_yen"]) + int(row["payout_yen"])
+            item["profit_yen"] = int(item["profit_yen"]) + int(row["profit_yen"])
+            race_ids = item["race_ids"]
+            if isinstance(race_ids, set):
+                race_ids.add(str(row["race_id"]))
+
+    connection.execute("DELETE FROM performance_summaries")
+    for (period_type, period_key, bet_type), item in aggregates.items():
+        race_ids = item["race_ids"]
+        race_count = len(race_ids) if isinstance(race_ids, set) else 0
+        tickets = int(item["tickets"])
+        hits = int(item["hits"])
+        stake_yen = int(item["stake_yen"])
+        payout_yen = int(item["payout_yen"])
+        profit_yen = int(item["profit_yen"])
+        hit_rate = hits / tickets if tickets else 0.0
+        roi = payout_yen / stake_yen if stake_yen else 0.0
+        connection.execute(
+            """
+            INSERT INTO performance_summaries(
+                period_type, period_key, bet_type, races, tickets, hits,
+                stake_yen, payout_yen, profit_yen, hit_rate, roi, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                period_type,
+                period_key,
+                bet_type,
+                int(race_count),
+                tickets,
+                hits,
+                stake_yen,
+                payout_yen,
+                profit_yen,
+                round(hit_rate, 6),
+                round(roi, 6),
+                updated_at,
+            ),
+        )
+    connection.commit()
+    return len(aggregates)
+
+
 def export_public_features(connection: sqlite3.Connection, output: Path, generated_at: str) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     sire_count = connection.execute("SELECT COUNT(*) AS count FROM sire_aptitude").fetchone()["count"]
@@ -237,6 +394,29 @@ def export_public_features(connection: sqlite3.Connection, output: Path, generat
         "generated_at": generated_at,
         "sire_aptitude_count": sire_count,
         "runner_feature_count": feature_count,
+        "performance_summaries": [
+            {
+                "period_type": row["period_type"],
+                "period_key": row["period_key"],
+                "bet_type": row["bet_type"],
+                "races": row["races"],
+                "tickets": row["tickets"],
+                "hits": row["hits"],
+                "stake_yen": row["stake_yen"],
+                "payout_yen": row["payout_yen"],
+                "profit_yen": row["profit_yen"],
+                "hit_rate": row["hit_rate"],
+                "roi": row["roi"],
+            }
+            for row in connection.execute(
+                """
+                SELECT period_type, period_key, bet_type, races, tickets, hits,
+                       stake_yen, payout_yen, profit_yen, hit_rate, roi
+                FROM performance_summaries
+                ORDER BY period_type, period_key, bet_type
+                """
+            )
+        ],
         "features": [
             {
                 "race_id": row["race_id"],
@@ -272,6 +452,7 @@ def run_pipeline(db_path: Path, sire_data: Path, public_output: Path) -> int:
             sires = load_sire_csv(sire_data)
             import_sires(connection, sires, started_at)
             feature_count = refresh_runner_features(connection, started_at)
+            summary_count = refresh_performance_summaries(connection, started_at)
             export_public_features(connection, public_output, started_at)
             connection.execute(
                 """
@@ -279,10 +460,10 @@ def run_pipeline(db_path: Path, sire_data: Path, public_output: Path) -> int:
                 SET finished_at = ?, status = ?, message = ?
                 WHERE run_id = ?
                 """,
-                (started_at, "ok", f"sires={len(sires)} features={feature_count}", run_id),
+                (started_at, "ok", f"sires={len(sires)} features={feature_count} summaries={summary_count}", run_id),
             )
             connection.commit()
-            print(f"Imported {len(sires)} sires and wrote {feature_count} runner features.")
+            print(f"Imported {len(sires)} sires, wrote {feature_count} runner features and {summary_count} summaries.")
             return 0
         except Exception as exc:
             connection.execute(

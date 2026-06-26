@@ -11,5 +11,44 @@ This document records the intended OCI placement for the JRA site.
 
 ## Status
 
-OCI resource creation is on hold. The next implementation step is to prepare
-the Terraform configuration for this compartment and apply it after confirmation.
+Terraform configuration has been added under `tf/`.
+
+The OCI VM is intended to run only the backend batch:
+
+- fetch and normalize JRA data
+- store features, predictions, results, payouts, and outcomes in SQLite
+- generate weekly, monthly, and yearly performance summaries
+- export lightweight JSON artifacts for the static site pipeline
+
+The public site remains on Cloudflare Pages. The OCI VM does not need inbound
+HTTP/HTTPS access; only SSH from the administrator CIDR is opened.
+
+## Terraform
+
+Copy `tf/terraform.tfvars.example` to `tf/local.auto.tfvars` and set:
+
+- `tenancy_ocid`
+- `user_ocid`
+- `fingerprint`
+- `private_key_path`
+- `admin_cidr`
+- `ssh_public_key_path`
+
+Then run:
+
+```bash
+cd tf
+terraform init
+terraform plan
+terraform apply
+```
+
+Default compute shape:
+
+- `VM.Standard.A1.Flex`
+- `1` OCPU
+- `6` GiB memory
+- `50` GiB boot volume
+
+This is enough for SQLite, scheduled scraping, feature generation, and summary
+aggregation. Increase only if historical backfill becomes slow.

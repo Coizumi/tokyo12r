@@ -17,11 +17,19 @@ GitHub Actionsには重いデータ収集や過去データ再計算を載せな
 
 役割分担:
 
-- OCI VM: データ収集、SQLite蓄積、指数計算、公開用特徴量ファイル生成
+- OCI VM: データ収集、SQLite蓄積、指数計算、的中判定、週/月/年サマリー生成、公開用特徴量ファイル生成
 - GitHub Actions: 当日JRA出走表取得、公開HTML生成、Cloudflare Pagesデプロイ
 - Cloudflare Pages: 静的サイト配信
 
 OCI側は小さいVMを前提に、差分更新とSQLite中心で構成する。全量再取得や重い機械学習は初期対象外とする。
+
+OCI VMはWebサーバーとして公開しない。公開はCloudflare Pagesに寄せ、OCIはバックエンドバッチと永続DBに限定する。
+
+使用コンパートメント:
+
+```text
+ocid1.compartment.oc1..aaaaaaaaavsn2rim6u3ka66526ggdbkd2gvxi26woaz2oau7gugvkep6vg4a
+```
 
 ## 更新スケジュール
 
@@ -56,9 +64,50 @@ OCI VM上のSQLiteを主ストアとする。
 - `race_entries`: 出走馬情報
 - `past_performances`: 過去走
 - `runner_features`: 出走馬単位の指数
+- `predictions`: 公開した予想印
+- `bet_tickets`: 生成した買い目
+- `race_results`: 確定着順
+- `payouts`: 払戻
+- `bet_outcomes`: 的中判定と損益
+- `performance_summaries`: 週間、月間、年間サマリー
 - `pipeline_runs`: バッチ実行履歴
 
 公開用には、SQLite全体ではなく軽量JSON/CSVのみを出力する。
+
+## 的中結果の蓄積
+
+OCI VMは、公開済み予想と確定結果を同じSQLiteに保存し、買い目単位で的中判定を行う。
+
+保存単位:
+
+- レース単位: 開催日、場、R、条件、発走時刻、結果取得状態
+- 予想単位: 印、馬名、馬番、人気状態、生成時刻
+- 買い目単位: 式別、組み合わせ、点数、想定購入額
+- 結果単位: 着順、馬番、馬名、払戻、確定時刻
+- 的中単位: 的中有無、払戻額、投資額、回収額、収支
+
+初期の購入額は1点100円換算とする。実購入額ではなく、回収率比較のための仮想集計値として扱う。
+
+サマリー粒度:
+
+```text
+weekly  = ISO年 + ISO週
+monthly = YYYY-MM
+yearly  = YYYY
+```
+
+サマリー項目:
+
+- レース数
+- 買い目点数
+- 的中点数
+- 投資額
+- 払戻額
+- 収支
+- 的中率
+- 回収率
+
+サマリーは `bet_outcomes` から再計算可能にする。係数変更や買い目変更後も、履歴データから再集計できるようにする。
 
 ## 血統補正
 

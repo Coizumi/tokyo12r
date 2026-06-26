@@ -6,6 +6,7 @@ __pycache__/
 *.pyc
 var/
 logs/
+xtra/
 
 tf/.terraform/
 tf/.terraform.lock.hcl

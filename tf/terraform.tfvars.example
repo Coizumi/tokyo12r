@@ -1,0 +1,20 @@
+tenancy_ocid     = "ocid1.tenancy.oc1..example"
+user_ocid        = "ocid1.user.oc1..example"
+compartment_ocid = "ocid1.compartment.oc1..aaaaaaaaavsn2rim6u3ka66526ggdbkd2gvxi26woaz2oau7gugvkep6vg4a"
+fingerprint      = "00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00"
+private_key_path = "D:/dev/xtra/oci/private_key.pem"
+
+region              = "ap-tokyo-1"
+admin_cidr          = "203.0.113.10/32"
+ssh_public_key_path = "D:/dev/jra/xtra/oci/ssh_id.pub"
+
+instance_shape      = "VM.Standard.A1.Flex"
+instance_ocpus      = 1
+instance_memory_gbs = 6
+boot_volume_size_in_gbs = 50
+
+# Leave image_ocid null to select the latest matching Oracle Linux image.
+image_ocid                     = null
+image_operating_system         = "Oracle Linux"
+image_operating_system_version = "9"
+ssh_user                       = "opc"
