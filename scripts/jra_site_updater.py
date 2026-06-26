@@ -10,6 +10,7 @@ import re
 import shutil
 import time
 from dataclasses import dataclass, field
+from functools import lru_cache
 from itertools import combinations, product
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -37,8 +38,14 @@ class InternalHorse:
     jockey: str = ""
     record: str = ""
     prize_yen: int = 0
+    sire_name: str = ""
     past_texts: list[str] = field(default_factory=list)
     score: float = 0.0
+    time_index: float = 50.0
+    closing_index: float = 50.0
+    pace_index: float = 50.0
+    sire_fit_score: float = 50.0
+    overall_index: float = 50.0
 
 
 @dataclass
@@ -193,6 +200,171 @@ def yen_value(text: str) -> int:
     return int(float(match.group(1)) * 10_000) if match else 0
 
 
+def parse_course_condition(course: str) -> tuple[str, int | None]:
+    surface = "芝" if "芝" in course else ""
+    if "ダート" in course or re.search(r"\bダ\b", course):
+        surface = "ダート"
+    distance_match = re.search(r"([\d,]+)\s*m", course)
+    distance = int(distance_match.group(1).replace(",", "")) if distance_match else None
+    return surface, distance
+
+
+def surface_axis(surface: str) -> int:
+    if surface == "芝":
+        return 100
+    if surface == "ダート":
+        return -100
+    return 0
+
+
+@lru_cache(maxsize=1)
+def load_sire_rows() -> dict[str, tuple[int, int]]:
+    path = Path(__file__).resolve().parent.parent / "data" / "Sire_data.csv"
+    if not path.exists():
+        return {}
+    rows: dict[str, tuple[int, int]] = {}
+    for line in path.read_text(encoding="utf-8").splitlines()[1:]:
+        parts = [part.strip() for part in line.split(",")]
+        if len(parts) < 3 or not parts[0]:
+            continue
+        try:
+            rows[parts[0]] = (int(parts[1]), int(parts[2]))
+        except ValueError:
+            continue
+    return rows
+
+
+def sire_fit_score(sire_name: str, course: str) -> float:
+    sire_rows = load_sire_rows()
+    if not sire_name or sire_name not in sire_rows:
+        return 50.0
+    surface, distance = parse_course_condition(course)
+    if distance is None:
+        return 50.0
+    sire_surface_axis, sire_distance = sire_rows[sire_name]
+    surface_fit = 1.0 - min(abs(sire_surface_axis - surface_axis(surface)), 200) / 200
+    distance_fit = 1.0 - min(abs(sire_distance - distance), 600) / 600
+    return round(max(0.0, min(100.0, (surface_fit * 0.55 + distance_fit * 0.45) * 100)), 3)
+
+
+def parse_finish_time(value: str) -> float | None:
+    match = re.search(r"\b(\d+):(\d{2}\.\d)\b", value)
+    if match:
+        return int(match.group(1)) * 60 + float(match.group(2))
+    return None
+
+
+def parse_past_performance(text: str) -> dict[str, object]:
+    normalized = normalize_text(text)
+    place_match = re.search(r"(\d+)\s*着", normalized)
+    field_match = re.search(r"(\d+)\s*頭", normalized)
+    course_time_match = re.search(r"(\d{3,4})(?:m)?\s*(?:芝ダ|芝|ダート|ダ)\s+(\d+:\d{2}\.\d|\d{2}\.\d)", normalized)
+    course_match = course_time_match or re.search(r"(\d{3,4})(?:m)?\s*(?:芝ダ|芝|ダート|ダ)", normalized)
+    time_value = parse_finish_time(course_time_match.group(2)) if course_time_match else parse_finish_time(normalized)
+    if course_time_match and time_value is None:
+        time_value = float(course_time_match.group(2))
+    corners: list[int] = []
+    kg_match = re.search(r"\d+\s*kg\s+([0-9 ]{1,15})(?:\s|$)", normalized)
+    if kg_match:
+        corners = [int(value) for value in re.findall(r"\d+", kg_match.group(1))]
+    return {
+        "place": int(place_match.group(1)) if place_match else None,
+        "field": int(field_match.group(1)) if field_match else None,
+        "distance": int(course_match.group(1)) if course_match else None,
+        "seconds": time_value,
+        "corners": corners,
+    }
+
+
+def has_four_race_history(horse: InternalHorse) -> bool:
+    histories = [text for text in horse.past_texts if normalize_text(text)]
+    return len(histories) >= 4
+
+
+def weighted_mean(values: list[tuple[float, float]]) -> float | None:
+    total_weight = sum(weight for _, weight in values)
+    if total_weight <= 0:
+        return None
+    return sum(value * weight for value, weight in values) / total_weight
+
+
+def minmax_index(raw_values: dict[str, float | None], higher_is_better: bool = True) -> dict[str, float]:
+    present = [value for value in raw_values.values() if value is not None]
+    if not present:
+        return {key: 50.0 for key in raw_values}
+    low = min(present)
+    high = max(present)
+    if math.isclose(low, high):
+        return {key: 50.0 for key in raw_values}
+    indexed: dict[str, float] = {}
+    for key, value in raw_values.items():
+        if value is None:
+            indexed[key] = 50.0
+            continue
+        ratio = (value - low) / (high - low)
+        if not higher_is_better:
+            ratio = 1.0 - ratio
+        indexed[key] = round(ratio * 100, 3)
+    return indexed
+
+
+def calculate_feature_indices(horses: list[InternalHorse], race: PublicRace) -> None:
+    weights = [1.0, 0.72, 0.52, 0.36]
+    time_raw: dict[str, float | None] = {}
+    closing_raw: dict[str, float | None] = {}
+    pace_raw: dict[str, float | None] = {}
+    overall_raw: dict[str, float] = {}
+    for horse in horses:
+        key = horse.number
+        speed_values: list[tuple[float, float]] = []
+        closing_values: list[tuple[float, float]] = []
+        pace_values: list[tuple[float, float]] = []
+        for weight, text in zip(weights, horse.past_texts):
+            parsed = parse_past_performance(text)
+            place = parsed["place"]
+            field = parsed["field"]
+            distance = parsed["distance"]
+            seconds = parsed["seconds"]
+            corners = parsed["corners"]
+            if isinstance(distance, int) and isinstance(seconds, float) and seconds > 0:
+                speed_values.append((distance / seconds, weight))
+            if isinstance(place, int) and isinstance(field, int) and field > 1:
+                finish_quality = (field + 1 - place) / field
+                gain = 0.0
+                if isinstance(corners, list) and corners:
+                    gain = max(0.0, (corners[-1] - place) / field)
+                    pace_values.append((1.0 - (max(corners[0], 1) - 1) / (field - 1), weight))
+                closing_values.append((finish_quality * 0.65 + gain * 0.35, weight))
+        time_raw[key] = weighted_mean(speed_values)
+        closing_raw[key] = weighted_mean(closing_values)
+        pace_raw[key] = weighted_mean(pace_values)
+        overall_raw[key] = score_horse(horse)
+        horse.score = overall_raw[key]
+        horse.sire_fit_score = sire_fit_score(horse.sire_name, race.course)
+
+    time_indices = minmax_index(time_raw)
+    closing_indices = minmax_index(closing_raw)
+    pace_indices = minmax_index(pace_raw)
+    overall_indices = minmax_index(overall_raw)
+    for horse in horses:
+        key = horse.number
+        horse.time_index = time_indices[key]
+        horse.closing_index = closing_indices[key]
+        horse.pace_index = pace_indices[key]
+        horse.overall_index = overall_indices[key]
+
+
+def horse_number(horse: InternalHorse) -> int:
+    return int(horse.number) if horse.number.isdigit() else 99
+
+
+def next_unselected(ranked: list[InternalHorse], selected: set[str]) -> InternalHorse | None:
+    for horse in ranked:
+        if horse.number not in selected:
+            return horse
+    return None
+
+
 def parse_horses(detail_html: str) -> list[InternalHorse]:
     soup = BeautifulSoup(detail_html, "html.parser")
     table = soup.find("table", class_="basic") or soup.find("table")
@@ -213,6 +385,7 @@ def parse_horses(detail_html: str) -> list[InternalHorse]:
             continue
         horse_text = normalize_text(horse_cell.get_text(" ", strip=True))
         popularity_match = re.search(r"\((\d+)\s*番人気\s*\)", horse_text)
+        sire_match = re.search(r"父：\s*(.*?)\s+母：", horse_text)
         win_node = horse_cell.select_one(".cell.win")
         prize_text = win_node.get("title") if win_node and win_node.get("title") else (win_node.get_text(" ", strip=True) if win_node else "")
         result_node = horse_cell.select_one(".cell.result")
@@ -228,6 +401,7 @@ def parse_horses(detail_html: str) -> list[InternalHorse]:
                 jockey=jockey,
                 record=normalize_text(result_node.get_text(" ", strip=True) if result_node else ""),
                 prize_yen=yen_value(prize_text),
+                sire_name=sire_match.group(1).strip() if sire_match else "",
                 past_texts=[normalize_text(cell.get_text(" ", strip=True)) for cell in cells[4:8]],
             )
         )
@@ -263,25 +437,70 @@ def score_horse(horse: InternalHorse) -> float:
     return round(score, 3)
 
 
-def make_picks(horses: list[InternalHorse], popularity_status: str = "中間") -> list[PublicPick]:
+def public_pick(mark: str, horse: InternalHorse, popularity_status: str, note: str) -> PublicPick:
+    return PublicPick(
+        mark=mark,
+        name=horse.name,
+        popularity_rank=horse.popularity_rank,
+        popularity_status=popularity_status,
+        score=horse.score,
+        note=note,
+    )
+
+
+def make_feature_picks(horses: list[InternalHorse], race: PublicRace, popularity_status: str) -> list[PublicPick]:
+    calculate_feature_indices(horses, race)
+    time_closing_rank = sorted(
+        horses,
+        key=lambda item: (-(item.time_index + item.closing_index), horse_number(item), item.name),
+    )
+    time_pace_rank = sorted(
+        horses,
+        key=lambda item: (-(item.time_index + item.pace_index), horse_number(item), item.name),
+    )
+    overall_rank = sorted(
+        horses,
+        key=lambda item: (
+            -(item.overall_index + item.time_index * 0.10 + item.closing_index * 0.08 + item.pace_index * 0.06 + item.sire_fit_score * 0.08),
+            horse_number(item),
+            item.name,
+        ),
+    )
+    sire_rank = sorted(horses, key=lambda item: (-item.sire_fit_score, horse_number(item), item.name))
+
+    ranking_by_mark = [
+        ("◎", time_closing_rank, "持ちタイム+末脚指数"),
+        ("○", time_pace_rank, "持ちタイム+先行力指数"),
+        ("▲", time_closing_rank, "持ちタイム+末脚指数 次点"),
+        ("△", overall_rank, "総合力指数"),
+        ("☆", sire_rank, "血統レース条件適性"),
+    ]
+    selected: set[str] = set()
+    picks: list[PublicPick] = []
+    for mark, ranked, note in ranking_by_mark:
+        horse = next_unselected(ranked, selected)
+        if horse is None:
+            horse = next_unselected(overall_rank, selected)
+        if horse is None:
+            continue
+        selected.add(horse.number)
+        picks.append(public_pick(mark, horse, popularity_status, note))
+    return picks
+
+
+def make_picks(horses: list[InternalHorse], popularity_status: str = "中間", race: PublicRace | None = None) -> list[PublicPick]:
+    if race is not None and horses and all(has_four_race_history(horse) for horse in horses):
+        return make_feature_picks(horses, race, popularity_status)
+
     for horse in horses:
         horse.score = score_horse(horse)
-    ranked = sorted(horses, key=lambda item: (-item.score, int(item.number), item.name))[:5]
+    ranked = sorted(horses, key=lambda item: (-item.score, horse_number(item), item.name))[:5]
     picks: list[PublicPick] = []
     for mark, horse in zip(MARKS, ranked):
         note = "近走・実績指数"
         if horse.record:
             note = f"近走・実績指数 / {horse.record}"
-        picks.append(
-            PublicPick(
-                mark=mark,
-                name=horse.name,
-                popularity_rank=horse.popularity_rank,
-                popularity_status=popularity_status,
-                score=horse.score,
-                note=note,
-            )
-        )
+        picks.append(public_pick(mark, horse, popularity_status, note))
     return picks
 
 
@@ -295,7 +514,7 @@ def fetch_official_races(target_date: dt.date, delay_seconds: float = 0.45) -> l
             race.odds_status = odds_status_for_race(target_date, race.start_time)
             time.sleep(delay_seconds)
             horses = parse_horses(fetch_detail_html(race.official_url))
-            race.picks = make_picks(horses, race.odds_status)
+            race.picks = make_picks(horses, race.odds_status, race)
         races.extend(venue_races)
     return races
 
