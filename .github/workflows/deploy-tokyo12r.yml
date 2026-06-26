@@ -1,0 +1,57 @@
+name: Deploy TOKYO12R to Cloudflare Pages
+
+on:
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Target date in JST (YYYY-MM-DD). Defaults to today."
+        required: false
+        type: string
+  push:
+    branches:
+      - main
+    paths:
+      - "scripts/jra_site_updater.py"
+      - ".github/workflows/deploy-tokyo12r.yml"
+
+concurrency:
+  group: tokyo12r-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      SITE_OUTPUT: site-dist
+      TZ: Asia/Tokyo
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: python -m pip install --upgrade beautifulsoup4
+
+      - name: Generate site
+        run: |
+          args=(--output "$SITE_OUTPUT" --fetch-official)
+          if [ -n "${{ inputs.date }}" ]; then
+            args+=(--date "${{ inputs.date }}")
+          fi
+          python scripts/jra_site_updater.py "${args[@]}"
+
+      - name: Deploy to Cloudflare Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx --yes wrangler@latest pages deploy "$SITE_OUTPUT" \
+            --project-name=tokyo12r \
+            --branch="${GITHUB_REF_NAME:-main}"
