@@ -452,14 +452,14 @@ def render_index(date_label: str, date_key: str, races: list[PublicRace], genera
     <section class="summary">
       <div>
         <span class="date">{html.escape(date_label)}</span>
-        <p>JRA公式発表を内部処理し、公開は印5頭と買い目に限定しています。</p>
+        <p>毎開催ごとに予想情報を掲載しています。</p>
       </div>
       <div class="badge">更新 {html.escape(generated_at)}</div>
     </section>
     {body}
   </main>
   <footer>
-    データ出典: JRA公式発表。出走表・馬柱の再掲は行いません。馬券は20歳になってから。
+    馬券は20歳になってから。
   </footer>
 </body>
 </html>
