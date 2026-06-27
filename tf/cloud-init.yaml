@@ -6,13 +6,25 @@ packages:
   - python3-pip
   - sqlite
 
+write_files:
+  - path: /etc/tokyo12r-feature-pipeline.env
+    owner: root:root
+    permissions: "0600"
+    content: |
+      TOKYO12R_DISPATCH_WORKFLOW=0
+      GITHUB_REPOSITORY=Coizumi/tokyo12r
+      GITHUB_WORKFLOW=deploy-tokyo12r.yml
+      GITHUB_TOKEN=
+
 runcmd:
   - timedatectl set-timezone Asia/Tokyo
+  - python3 -m pip install --upgrade beautifulsoup4
   - mkdir -p /opt/tokyo12r /opt/tokyo12r/var
   - chown -R opc:opc /opt/tokyo12r
   - test -d /opt/tokyo12r/.git || sudo -u opc git clone https://github.com/Coizumi/tokyo12r.git /opt/tokyo12r
   - sudo -u opc git -C /opt/tokyo12r pull --ff-only
   - cp /opt/tokyo12r/deploy/systemd/tokyo12r-feature-update.service /etc/systemd/system/
   - cp /opt/tokyo12r/deploy/systemd/tokyo12r-feature-update.timer /etc/systemd/system/
+  - chown -R opc:opc /opt/tokyo12r
   - systemctl daemon-reload
   - systemctl enable --now tokyo12r-feature-update.timer

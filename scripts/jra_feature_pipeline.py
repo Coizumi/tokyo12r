@@ -4,14 +4,16 @@ from __future__ import annotations
 import argparse
 import csv
 import datetime as dt
+import hashlib
 import json
+import re
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 JST = ZoneInfo("Asia/Tokyo")
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 @dataclass(frozen=True)
@@ -65,6 +67,7 @@ def init_schema(connection: sqlite3.Connection) -> None:
             horse_id TEXT NOT NULL,
             horse_name TEXT NOT NULL,
             sire_name TEXT NOT NULL DEFAULT '',
+            dam_sire_name TEXT NOT NULL DEFAULT '',
             horse_number INTEGER,
             updated_at TEXT NOT NULL,
             PRIMARY KEY (race_id, horse_id),
@@ -184,11 +187,18 @@ def init_schema(connection: sqlite3.Connection) -> None:
         );
         """
     )
+    ensure_column(connection, "race_entries", "dam_sire_name", "TEXT NOT NULL DEFAULT ''")
     connection.execute(
         "INSERT OR REPLACE INTO metadata(key, value) VALUES (?, ?)",
         ("schema_version", str(SCHEMA_VERSION)),
     )
     connection.commit()
+
+
+def ensure_column(connection: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+    columns = {str(row["name"]) for row in connection.execute(f"PRAGMA table_info({table})")}
+    if column not in columns:
+        connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
 def load_sire_csv(path: Path) -> list[SireAptitude]:
@@ -245,13 +255,21 @@ def surface_to_axis(surface: str) -> int:
     return 0
 
 
-def sire_fit_score(sire: SireAptitude | None, surface: str, distance_m: int) -> float:
-    if sire is None:
+def lineage_fit_score(stallion: SireAptitude | None, surface: str, distance_m: int) -> float:
+    if stallion is None:
         return 50.0
     target_axis = surface_to_axis(surface)
-    surface_fit = 1.0 - min(abs(sire.surface_axis - target_axis), 200) / 200
-    distance_fit = 1.0 - min(abs(sire.distance_m - distance_m), 600) / 600
+    surface_fit = 1.0 - min(abs(stallion.surface_axis - target_axis), 200) / 200
+    distance_fit = 1.0 - min(abs(stallion.distance_m - distance_m), 600) / 600
     return round((surface_fit * 0.55 + distance_fit * 0.45) * 100, 3)
+
+
+def sire_fit_score(sire: SireAptitude | None, dam_sire: SireAptitude | None, surface: str, distance_m: int) -> float:
+    score = lineage_fit_score(sire, surface, distance_m)
+    dam_sire_score = lineage_fit_score(dam_sire, surface, distance_m)
+    if dam_sire_score <= 50.0:
+        return score
+    return round(min(100.0, score + (dam_sire_score - 50.0) * 0.35), 3)
 
 
 def fetch_sire(connection: sqlite3.Connection, sire_name: str) -> SireAptitude | None:
@@ -277,7 +295,7 @@ def fetch_sire(connection: sqlite3.Connection, sire_name: str) -> SireAptitude |
 def refresh_runner_features(connection: sqlite3.Connection, generated_at: str) -> int:
     rows = connection.execute(
         """
-        SELECT e.race_id, e.horse_id, e.sire_name, r.surface, r.distance_m
+        SELECT e.race_id, e.horse_id, e.sire_name, e.dam_sire_name, r.surface, r.distance_m
         FROM race_entries e
         JOIN races r ON r.race_id = e.race_id
         """
@@ -285,7 +303,8 @@ def refresh_runner_features(connection: sqlite3.Connection, generated_at: str) -
     written = 0
     for row in rows:
         sire = fetch_sire(connection, str(row["sire_name"]))
-        fit = sire_fit_score(sire, str(row["surface"]), int(row["distance_m"]))
+        dam_sire = fetch_sire(connection, str(row["dam_sire_name"]))
+        fit = sire_fit_score(sire, dam_sire, str(row["surface"]), int(row["distance_m"]))
         connection.execute(
             """
             INSERT INTO runner_features(
@@ -302,6 +321,181 @@ def refresh_runner_features(connection: sqlite3.Connection, generated_at: str) -
         written += 1
     connection.commit()
     return written
+
+
+def normalize_text(value: str) -> str:
+    return re.sub(r"\s+", " ", value or "").strip()
+
+
+def parse_course_condition(course: str) -> tuple[str, int]:
+    surface = "芝" if "芝" in course else ""
+    if "ダート" in course or re.search(r"\bダ\b", course):
+        surface = "ダート"
+    if "障害" in course:
+        surface = "障害"
+    distance_match = re.search(r"([\d,]+)\s*m", course)
+    distance = int(distance_match.group(1).replace(",", "")) if distance_match else 0
+    return surface, distance
+
+
+def race_id_for(date_key: str, venue: str, race_no: int) -> str:
+    venue_key = hashlib.sha1(venue.encode("utf-8")).hexdigest()[:8]
+    return f"{date_key}-{venue_key}-{race_no:02d}"
+
+
+def horse_id_for(horse_name: str) -> str:
+    digest = hashlib.sha1(horse_name.encode("utf-8")).hexdigest()[:12]
+    return f"horse-{digest}"
+
+
+def ticket_key(ticket: object) -> str:
+    if isinstance(ticket, list):
+        return "-".join(str(item) for item in ticket)
+    if isinstance(ticket, tuple):
+        return "-".join(str(item) for item in ticket)
+    return str(ticket)
+
+
+def import_public_payload(connection: sqlite3.Connection, public_data: Path, updated_at: str) -> tuple[int, int, int]:
+    payload = json.loads(public_data.read_text(encoding="utf-8"))
+    date_key = str(payload.get("date") or dt.datetime.now(JST).date().isoformat())
+    races_written = 0
+    predictions_written = 0
+    tickets_written = 0
+
+    for item in payload.get("races", []):
+        venue = normalize_text(str(item.get("venue", "")))
+        race_no = int(item.get("race_no") or 0)
+        if not venue or race_no <= 0:
+            continue
+        race_id = race_id_for(date_key, venue, race_no)
+        surface, distance_m = parse_course_condition(str(item.get("course", "")))
+        connection.execute(
+            """
+            INSERT INTO races(
+                race_id, race_date, venue, race_no, surface, distance_m, title, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(race_id) DO UPDATE SET
+                race_date=excluded.race_date,
+                venue=excluded.venue,
+                race_no=excluded.race_no,
+                surface=excluded.surface,
+                distance_m=excluded.distance_m,
+                title=excluded.title,
+                updated_at=excluded.updated_at
+            """,
+            (race_id, date_key, venue, race_no, surface, distance_m, str(item.get("title", "")), updated_at),
+        )
+        connection.execute("DELETE FROM predictions WHERE race_id = ?", (race_id,))
+        connection.execute("DELETE FROM bet_tickets WHERE race_id = ?", (race_id,))
+        races_written += 1
+
+        horse_ids_by_name: dict[str, str] = {}
+        for runner in item.get("runners", []):
+            horse_name = normalize_text(str(runner.get("name", "")))
+            if not horse_name:
+                continue
+            horse_id = horse_id_for(f"{date_key}:{horse_name}")
+            horse_ids_by_name[horse_name] = horse_id
+            connection.execute(
+                """
+                INSERT INTO race_entries(
+                    race_id, horse_id, horse_name, sire_name, dam_sire_name, horse_number, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(race_id, horse_id) DO UPDATE SET
+                    horse_name=excluded.horse_name,
+                    sire_name=excluded.sire_name,
+                    dam_sire_name=excluded.dam_sire_name,
+                    horse_number=excluded.horse_number,
+                    updated_at=excluded.updated_at
+                """,
+                (
+                    race_id,
+                    horse_id,
+                    horse_name,
+                    str(runner.get("sire_name", "")),
+                    str(runner.get("dam_sire_name", "")),
+                    int(runner["number"]) if str(runner.get("number", "")).isdigit() else None,
+                    updated_at,
+                ),
+            )
+
+        mark_to_horse: dict[str, str] = {}
+        for pick in item.get("picks", []):
+            mark = str(pick.get("mark", ""))
+            horse_name = normalize_text(str(pick.get("name", "")))
+            if not mark or not horse_name:
+                continue
+            horse_id = horse_ids_by_name.get(horse_name, horse_id_for(f"{date_key}:{horse_name}"))
+            mark_to_horse[mark] = horse_name
+            connection.execute(
+                """
+                INSERT INTO race_entries(
+                    race_id, horse_id, horse_name, sire_name, dam_sire_name, horse_number, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(race_id, horse_id) DO UPDATE SET
+                    horse_name=excluded.horse_name,
+                    sire_name=CASE
+                        WHEN race_entries.sire_name = '' THEN excluded.sire_name
+                        ELSE race_entries.sire_name
+                    END,
+                    dam_sire_name=CASE
+                        WHEN race_entries.dam_sire_name = '' THEN excluded.dam_sire_name
+                        ELSE race_entries.dam_sire_name
+                    END,
+                    horse_number=COALESCE(race_entries.horse_number, excluded.horse_number),
+                    updated_at=excluded.updated_at
+                """,
+                (
+                    race_id,
+                    horse_id,
+                    horse_name,
+                    str(pick.get("sire_name", "")),
+                    str(pick.get("dam_sire_name", "")),
+                    int(pick["horse_number"]) if str(pick.get("horse_number", "")).isdigit() else None,
+                    updated_at,
+                ),
+            )
+            connection.execute(
+                """
+                INSERT INTO predictions(
+                    race_id, horse_id, mark, horse_number, horse_name,
+                    popularity_rank, popularity_status, generated_at
+                )
+                VALUES (?, ?, ?, NULL, ?, ?, ?, ?)
+                """,
+                (
+                    race_id,
+                    horse_id,
+                    mark,
+                    horse_name,
+                    int(pick["popularity_rank"]) if pick.get("popularity_rank") else None,
+                    str(pick.get("popularity_status", item.get("odds_status", ""))),
+                    updated_at,
+                ),
+            )
+            predictions_written += 1
+
+        for bet in item.get("bets", []):
+            bet_type = str(bet.get("label") or bet.get("formula") or "unknown")
+            for ticket in bet.get("tickets", []):
+                key = ticket_key(ticket)
+                connection.execute(
+                    """
+                    INSERT INTO bet_tickets(race_id, bet_type, ticket_key, stake_yen, generated_at)
+                    VALUES (?, ?, ?, 100, ?)
+                    ON CONFLICT(race_id, bet_type, ticket_key) DO UPDATE SET
+                        stake_yen=excluded.stake_yen,
+                        generated_at=excluded.generated_at
+                    """,
+                    (race_id, bet_type, key, updated_at),
+                )
+                tickets_written += 1
+    connection.commit()
+    return races_written, predictions_written, tickets_written
 
 
 def period_keys(race_date: str) -> dict[str, str]:
@@ -439,8 +633,18 @@ def export_public_features(connection: sqlite3.Connection, output: Path, generat
     output.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def run_pipeline(db_path: Path, sire_data: Path, public_output: Path) -> int:
+def backup_database(db_path: Path) -> Path | None:
+    if not db_path.exists():
+        return None
+    timestamp = dt.datetime.now(JST).strftime("%Y%m%d%H%M%S")
+    backup_path = db_path.with_suffix(f".{timestamp}.bak")
+    backup_path.write_bytes(db_path.read_bytes())
+    return backup_path
+
+
+def run_pipeline(db_path: Path, sire_data: Path, public_output: Path, public_data: Path | None = None) -> int:
     started_at = dt.datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S JST")
+    backup_path = backup_database(db_path)
     connection = connect(db_path)
     try:
         init_schema(connection)
@@ -451,6 +655,9 @@ def run_pipeline(db_path: Path, sire_data: Path, public_output: Path) -> int:
         try:
             sires = load_sire_csv(sire_data)
             import_sires(connection, sires, started_at)
+            race_count = prediction_count = ticket_count = 0
+            if public_data is not None:
+                race_count, prediction_count, ticket_count = import_public_payload(connection, public_data, started_at)
             feature_count = refresh_runner_features(connection, started_at)
             summary_count = refresh_performance_summaries(connection, started_at)
             export_public_features(connection, public_output, started_at)
@@ -460,10 +667,22 @@ def run_pipeline(db_path: Path, sire_data: Path, public_output: Path) -> int:
                 SET finished_at = ?, status = ?, message = ?
                 WHERE run_id = ?
                 """,
-                (started_at, "ok", f"sires={len(sires)} features={feature_count} summaries={summary_count}", run_id),
+                (
+                    started_at,
+                    "ok",
+                    (
+                        f"sires={len(sires)} races={race_count} predictions={prediction_count} "
+                        f"tickets={ticket_count} features={feature_count} summaries={summary_count} "
+                        f"backup={backup_path or ''}"
+                    ),
+                    run_id,
+                ),
             )
             connection.commit()
-            print(f"Imported {len(sires)} sires, wrote {feature_count} runner features and {summary_count} summaries.")
+            print(
+                f"Imported {len(sires)} sires, {race_count} races, {prediction_count} predictions, "
+                f"{ticket_count} tickets, wrote {feature_count} runner features and {summary_count} summaries."
+            )
             return 0
         except Exception as exc:
             connection.execute(
@@ -485,12 +704,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--db", type=Path, default=Path("var/jra_features.sqlite3"))
     parser.add_argument("--sire-data", type=Path, default=Path("data/Sire_data.csv"))
     parser.add_argument("--public-output", type=Path, default=Path("site-dist/features-jra.json"))
+    parser.add_argument("--public-data", type=Path, help="public-dataYYYYMMDD.json generated by jra_site_updater.py")
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
-    return run_pipeline(args.db, args.sire_data, args.public_output)
+    return run_pipeline(args.db, args.sire_data, args.public_output, args.public_data)
 
 
 if __name__ == "__main__":

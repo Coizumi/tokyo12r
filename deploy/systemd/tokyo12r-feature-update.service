@@ -5,6 +5,9 @@ After=network-online.target
 
 [Service]
 Type=oneshot
+User=opc
+Group=opc
 WorkingDirectory=/opt/tokyo12r
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/usr/bin/python3 /opt/tokyo12r/scripts/jra_feature_pipeline.py --db /opt/tokyo12r/var/jra_features.sqlite3 --sire-data /opt/tokyo12r/data/Sire_data.csv --public-output /opt/tokyo12r/site-dist/features-jra.json
+EnvironmentFile=-/etc/tokyo12r-feature-pipeline.env
+ExecStart=/usr/bin/python3 /opt/tokyo12r/scripts/jra_oci_batch.py --repo-dir /opt/tokyo12r --output /opt/tokyo12r/site-dist --db /opt/tokyo12r/var/jra_features.sqlite3 --sire-data /opt/tokyo12r/data/Sire_data.csv --public-output /opt/tokyo12r/site-dist/features-jra.json

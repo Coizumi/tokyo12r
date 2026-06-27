@@ -59,6 +59,18 @@ class PublicPick:
     popularity_status: str
     score: float
     note: str
+    horse_number: str = ""
+    sire_name: str = ""
+    dam_sire_name: str = ""
+
+
+@dataclass
+class PublicRunner:
+    number: str
+    name: str
+    popularity_rank: int | None
+    sire_name: str
+    dam_sire_name: str
 
 
 @dataclass
@@ -72,6 +84,7 @@ class PublicRace:
     result_url: str = ""
     odds_status: str = "中間"
     picks: list[PublicPick] = field(default_factory=list)
+    runners: list[PublicRunner] = field(default_factory=list)
 
 
 def normalize_text(value: str) -> str:
@@ -466,6 +479,9 @@ def public_pick(mark: str, horse: InternalHorse, popularity_status: str, note: s
         popularity_status=popularity_status,
         score=horse.score,
         note=note,
+        horse_number=horse.number,
+        sire_name=horse.sire_name,
+        dam_sire_name=horse.dam_sire_name,
     )
 
 
@@ -536,6 +552,16 @@ def fetch_official_races(target_date: dt.date, delay_seconds: float = 0.45) -> l
             race.odds_status = odds_status_for_race(target_date, race.start_time)
             time.sleep(delay_seconds)
             horses = parse_horses(fetch_detail_html(race.official_url))
+            race.runners = [
+                PublicRunner(
+                    number=horse.number,
+                    name=horse.name,
+                    popularity_rank=horse.popularity_rank,
+                    sire_name=horse.sire_name,
+                    dam_sire_name=horse.dam_sire_name,
+                )
+                for horse in horses
+            ]
             race.picks = make_picks(horses, race.odds_status, race)
         races.extend(venue_races)
     return races
@@ -613,6 +639,48 @@ def public_payload(date: dt.date, generated_at: str, races: list[PublicRace]) ->
             for race in races
         ],
     }
+
+
+def oci_payload(date: dt.date, generated_at: str, races: list[PublicRace]) -> dict[str, object]:
+    payload = public_payload(date, generated_at, races)
+    private_races = []
+    for race in races:
+        private_races.append(
+            {
+                "venue": race.venue,
+                "race_no": race.race_no,
+                "start_time": race.start_time,
+                "title": race.title,
+                "course": race.course,
+                "odds_status": race.odds_status,
+                "runners": [
+                    {
+                        "number": runner.number,
+                        "name": runner.name,
+                        "popularity_rank": runner.popularity_rank,
+                        "sire_name": runner.sire_name,
+                        "dam_sire_name": runner.dam_sire_name,
+                    }
+                    for runner in race.runners
+                ],
+                "picks": [
+                    {
+                        "mark": pick.mark,
+                        "name": pick.name,
+                        "horse_number": pick.horse_number,
+                        "popularity_rank": pick.popularity_rank,
+                        "popularity_status": pick.popularity_status,
+                        "sire_name": pick.sire_name,
+                        "dam_sire_name": pick.dam_sire_name,
+                    }
+                    for pick in race.picks
+                ],
+                "bets": bet_sections(race.picks),
+            }
+        )
+    payload["races"] = private_races
+    payload["visibility"] = "oci-private"
+    return payload
 
 
 def load_public_payload(input_path: Path | None, target_date: dt.date) -> tuple[list[PublicRace], str]:
@@ -915,7 +983,13 @@ footer { width:min(1180px, calc(100vw - 24px)); margin:0 auto 32px; color:var(--
     )
 
 
-def generate(output: Path, target_date: dt.date, races: list[PublicRace], generated_at: str) -> None:
+def generate(
+    output: Path,
+    target_date: dt.date,
+    races: list[PublicRace],
+    generated_at: str,
+    oci_data_output: Path | None = None,
+) -> None:
     date_label = target_date.strftime("%Y/%m/%d")
     date_key = target_date.strftime("%Y%m%d")
     if output.exists():
@@ -930,6 +1004,12 @@ def generate(output: Path, target_date: dt.date, races: list[PublicRace], genera
     (output / "index.html").write_text(render_index(date_label, date_key, races, generated_at), encoding="utf-8")
     (output / f"result{date_key}.html").write_text(render_results(date_label, date_key, races, generated_at), encoding="utf-8")
     (output / f"public-data{date_key}.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    if oci_data_output is not None:
+        oci_data_output.parent.mkdir(parents=True, exist_ok=True)
+        oci_data_output.write_text(
+            json.dumps(oci_payload(target_date, generated_at, races), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
     (output / "robots.txt").write_text("User-agent: *\nAllow: /\n", encoding="utf-8")
     (output / "sitemap.xml").write_text(
         f"""<?xml version="1.0" encoding="UTF-8"?>
@@ -953,6 +1033,7 @@ def main() -> int:
     parser.add_argument("--output", default="site-dist")
     parser.add_argument("--date", default=dt.datetime.now(JST).date().isoformat())
     parser.add_argument("--input", type=Path, help="sanitized public JSON generated earlier")
+    parser.add_argument("--oci-data-output", type=Path, help="private OCI JSON output with runners and bloodline fields")
     parser.add_argument("--fetch-official", action="store_true", help="fetch current JRA official race card HTML")
     parser.add_argument("--delay", type=float, default=0.45, help="seconds between official JRA requests")
     args = parser.parse_args()
@@ -964,7 +1045,7 @@ def main() -> int:
     else:
         races, loaded_generated_at = load_public_payload(args.input, target_date)
         generated_at = loaded_generated_at or generated_at
-    generate(Path(args.output), target_date, races, generated_at)
+    generate(Path(args.output), target_date, races, generated_at, args.oci_data_output)
     print(f"Generated {len(races)} races into {args.output}")
     return 0
 
