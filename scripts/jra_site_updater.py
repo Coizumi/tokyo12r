@@ -30,6 +30,8 @@ USER_AGENT = "TOKYO12R-by-ZIN/0.1 (+official-source-check)"
 BANNER_ASSET_NAME = "tokyo12r-paddock-banner.jpg"
 MARKS = ["◎", "○", "▲", "△", "☆"]
 DAM_SIRE_BONUS_WEIGHT = 0.35
+ADSENSE_SCRIPT = """  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6637962622384846"
+     crossorigin="anonymous"></script>"""
 
 
 @dataclass
@@ -1166,6 +1168,7 @@ def render_index(date_label: str, date_key: str, races: list[PublicRace], genera
   <meta name="description" content="中央競馬の予想印と買い目を公開するTOKYO12R by ZINです。">
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/assets/site.css">
+{ADSENSE_SCRIPT}
 </head>
 <body>
   <header class="topbar">
@@ -1243,6 +1246,7 @@ def render_results(date_label: str, date_key: str, races: list[PublicRace], gene
   <meta name="description" content="TOKYO12Rの予想印とレース結果です。">
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/assets/site.css">
+{ADSENSE_SCRIPT}
 </head>
 <body>
   <header class="topbar">
