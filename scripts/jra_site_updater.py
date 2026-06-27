@@ -791,14 +791,12 @@ def payout_for_type(payouts: list[PublicPayout], bet_type: str) -> PublicPayout 
     return None
 
 
-def winning_marks(race: PublicRace) -> tuple[str, ...]:
+def winning_marks(race: PublicRace) -> tuple[str | None, ...]:
     number_to_mark = {pick.horse_number: pick.mark for pick in race.picks if pick.horse_number and pick.mark}
-    marks = []
-    for row in sorted(race.result_rows, key=lambda item: int(item.rank) if item.rank.isdigit() else 99):
-        mark = number_to_mark.get(row.horse_number)
-        if mark:
-            marks.append(mark)
-    return tuple(marks)
+    return tuple(
+        number_to_mark.get(row.horse_number)
+        for row in sorted(race.result_rows, key=lambda item: int(item.rank) if item.rank.isdigit() else 99)
+    )
 
 
 def section_payout_type(label: str) -> str:
@@ -811,15 +809,15 @@ def section_payout_type(label: str) -> str:
     return "馬連"
 
 
-def is_winning_ticket(label: str, ticket: tuple[str, ...], marks: tuple[str, ...]) -> bool:
+def is_winning_ticket(label: str, ticket: tuple[str, ...], marks: tuple[str | None, ...]) -> bool:
     if "馬連" in label:
-        return len(marks) >= 2 and set(ticket) == set(marks[:2])
+        return len(marks) >= 2 and None not in marks[:2] and set(ticket) == set(marks[:2])
     if "3連複" in label:
-        return len(marks) >= 3 and set(ticket) == set(marks[:3])
+        return len(marks) >= 3 and None not in marks[:3] and set(ticket) == set(marks[:3])
     if "3連単" in label:
-        return len(marks) >= 3 and tuple(ticket) == tuple(marks[:3])
+        return len(marks) >= 3 and None not in marks[:3] and tuple(ticket) == tuple(marks[:3])
     if "馬単" in label:
-        return len(marks) >= 2 and tuple(ticket) == tuple(marks[:2])
+        return len(marks) >= 2 and None not in marks[:2] and tuple(ticket) == tuple(marks[:2])
     return False
 
 
