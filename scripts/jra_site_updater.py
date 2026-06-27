@@ -772,12 +772,10 @@ def bet_sections(picks: list[PublicPick]) -> list[dict[str, object]]:
         for combo in product(["◎", "○"], ["◎", "○", "▲"], MARKS)
         if len(set(combo)) == 3
     ]
-    exacta = [("☆", mark) for mark in ["◎", "○", "▲", "△"]]
     return [
         {"label": "馬連フォーメーション", "formula": "◎○ - ○▲△☆", "count": len(umaren), "tickets": umaren},
         {"label": "3連複BOX", "formula": "◎○▲△☆", "count": len(trio_box), "tickets": trio_box},
         {"label": "3連単フォーメーション", "formula": "◎○ - ◎○▲ - ◎○▲△☆", "count": len(trifecta), "tickets": trifecta},
-        {"label": "穴狙い馬単", "formula": "☆ - ◎○▲△", "count": len(exacta), "tickets": exacta},
     ]
 
 
