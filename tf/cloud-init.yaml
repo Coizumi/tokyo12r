@@ -1,9 +1,10 @@
 #cloud-config
-package_update: true
+package_update: false
 packages:
   - git
   - python3
   - python3-pip
+  - python3-beautifulsoup4
   - sqlite
 
 write_files:
@@ -18,7 +19,6 @@ write_files:
 
 runcmd:
   - timedatectl set-timezone Asia/Tokyo
-  - python3 -m pip install --upgrade beautifulsoup4
   - mkdir -p /opt/tokyo12r /opt/tokyo12r/var
   - chown -R opc:opc /opt/tokyo12r
   - test -d /opt/tokyo12r/.git || sudo -u opc git clone https://github.com/Coizumi/tokyo12r.git /opt/tokyo12r
