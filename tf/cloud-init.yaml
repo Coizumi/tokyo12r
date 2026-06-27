@@ -1,11 +1,5 @@
 #cloud-config
 package_update: false
-packages:
-  - git
-  - python3
-  - python3-pip
-  - python3-beautifulsoup4
-  - sqlite
 
 write_files:
   - path: /etc/tokyo12r-feature-pipeline.env
@@ -21,10 +15,3 @@ runcmd:
   - timedatectl set-timezone Asia/Tokyo
   - mkdir -p /opt/tokyo12r /opt/tokyo12r/var
   - chown -R opc:opc /opt/tokyo12r
-  - test -d /opt/tokyo12r/.git || sudo -u opc git clone https://github.com/Coizumi/tokyo12r.git /opt/tokyo12r
-  - sudo -u opc git -C /opt/tokyo12r pull --ff-only
-  - cp /opt/tokyo12r/deploy/systemd/tokyo12r-feature-update.service /etc/systemd/system/
-  - cp /opt/tokyo12r/deploy/systemd/tokyo12r-feature-update.timer /etc/systemd/system/
-  - chown -R opc:opc /opt/tokyo12r
-  - systemctl daemon-reload
-  - systemctl enable --now tokyo12r-feature-update.timer
