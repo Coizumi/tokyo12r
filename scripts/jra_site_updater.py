@@ -28,6 +28,7 @@ SITE_TITLE = "TOKYO12R by ZIN"
 USER_AGENT = "TOKYO12R-by-ZIN/0.1 (+official-source-check)"
 BANNER_ASSET_NAME = "tokyo12r-paddock-banner.jpg"
 MARKS = ["◎", "○", "▲", "△", "☆"]
+DAM_SIRE_BONUS_WEIGHT = 0.35
 
 
 @dataclass
@@ -40,6 +41,7 @@ class InternalHorse:
     record: str = ""
     prize_yen: int = 0
     sire_name: str = ""
+    dam_sire_name: str = ""
     past_texts: list[str] = field(default_factory=list)
     score: float = 0.0
     time_index: float = 50.0
@@ -247,17 +249,25 @@ def load_sire_rows() -> dict[str, tuple[int, int]]:
     return rows
 
 
-def sire_fit_score(sire_name: str, course: str) -> float:
+def lineage_fit_score(stallion_name: str, course: str) -> float:
     sire_rows = load_sire_rows()
-    if not sire_name or sire_name not in sire_rows:
+    if not stallion_name or stallion_name not in sire_rows:
         return 50.0
     surface, distance = parse_course_condition(course)
     if distance is None:
         return 50.0
-    sire_surface_axis, sire_distance = sire_rows[sire_name]
+    sire_surface_axis, sire_distance = sire_rows[stallion_name]
     surface_fit = 1.0 - min(abs(sire_surface_axis - surface_axis(surface)), 200) / 200
     distance_fit = 1.0 - min(abs(sire_distance - distance), 600) / 600
     return round(max(0.0, min(100.0, (surface_fit * 0.55 + distance_fit * 0.45) * 100)), 3)
+
+
+def sire_fit_score(sire_name: str, course: str, dam_sire_name: str = "") -> float:
+    score = lineage_fit_score(sire_name, course)
+    dam_sire_score = lineage_fit_score(dam_sire_name, course) if dam_sire_name else 50.0
+    if dam_sire_score <= 50.0:
+        return score
+    return round(min(100.0, score + (dam_sire_score - 50.0) * DAM_SIRE_BONUS_WEIGHT), 3)
 
 
 def parse_finish_time(value: str) -> float | None:
@@ -353,7 +363,7 @@ def calculate_feature_indices(horses: list[InternalHorse], race: PublicRace) -> 
         pace_raw[key] = weighted_mean(pace_values)
         overall_raw[key] = score_horse(horse)
         horse.score = overall_raw[key]
-        horse.sire_fit_score = sire_fit_score(horse.sire_name, race.course)
+        horse.sire_fit_score = sire_fit_score(horse.sire_name, race.course, horse.dam_sire_name)
 
     time_indices = minmax_index(time_raw)
     closing_indices = minmax_index(closing_raw)
@@ -399,6 +409,7 @@ def parse_horses(detail_html: str) -> list[InternalHorse]:
         horse_text = normalize_text(horse_cell.get_text(" ", strip=True))
         popularity_match = re.search(r"\((\d+)\s*番人気\s*\)", horse_text)
         sire_match = re.search(r"父：\s*(.*?)\s+母：", horse_text)
+        dam_sire_match = re.search(r"(?:母の父|母父)：\s*(.*?)(?:\s+(?:母の母|馬主|生産者|産地|調教師)：|$)", horse_text)
         win_node = horse_cell.select_one(".cell.win")
         prize_text = win_node.get("title") if win_node and win_node.get("title") else (win_node.get_text(" ", strip=True) if win_node else "")
         result_node = horse_cell.select_one(".cell.result")
@@ -415,6 +426,7 @@ def parse_horses(detail_html: str) -> list[InternalHorse]:
                 record=normalize_text(result_node.get_text(" ", strip=True) if result_node else ""),
                 prize_yen=yen_value(prize_text),
                 sire_name=sire_match.group(1).strip() if sire_match else "",
+                dam_sire_name=dam_sire_match.group(1).strip() if dam_sire_match else "",
                 past_texts=[normalize_text(cell.get_text(" ", strip=True)) for cell in cells[4:8]],
             )
         )
@@ -504,7 +516,7 @@ def make_picks(horses: list[InternalHorse], popularity_status: str = "中間", r
     for horse in horses:
         horse.score = score_horse(horse)
         if race is not None:
-            horse.sire_fit_score = sire_fit_score(horse.sire_name, race.course)
+            horse.sire_fit_score = sire_fit_score(horse.sire_name, race.course, horse.dam_sire_name)
             horse.score = round(horse.score + horse.sire_fit_score * 0.08, 3)
     ranked = sorted(horses, key=lambda item: (-item.score, horse_number(item), item.name))[:5]
     picks: list[PublicPick] = []

@@ -27,6 +27,7 @@ TOKYO12R by ZIN のJRA予想ロジックは、JRA公式の出走表HTMLを内部
 - 騎手
 - 獲得賞金
 - 父名
+- 母の父名
 - 近走4走分のテキスト
 
 公開JSONおよびHTMLには、馬番、騎手、成績詳細、獲得賞金、過去走詳細、スコアは出しません。公開対象は予想印、馬名、人気表示、買い目に限定します。
@@ -129,7 +130,7 @@ pace_index = レース内で0から100に正規化したearly_position_score
 
 ### 血統レース条件適性
 
-父名を `data/Sire_data.csv` に照合し、レース条件の芝/ダートと距離に合うほど高くします。
+父名と母の父名を `data/Sire_data.csv` に照合し、レース条件の芝/ダートと距離に合うほど高くします。父の適性を基本値にし、母の父は中立値を超える分だけ補助加点します。
 
 この指数は全レースに適用します。新馬戦、転入初戦、近走4走が不足する馬では近走由来の評価が横並びになりやすいため、基礎スコアに以下の補正を加えます。
 
@@ -153,15 +154,22 @@ CSV列は以下です。
 不明   => 0
 ```
 
-血統適性は以下で計算します。
+父および母の父それぞれの単体適性は以下で計算します。
 
 ```text
-surface_fit = 1 - min(abs(sire.surface_axis - race_surface_axis), 200) / 200
-distance_fit = 1 - min(abs(sire.distance_m - race_distance_m), 600) / 600
-sire_fit_score = (surface_fit * 0.55 + distance_fit * 0.45) * 100
+surface_fit = 1 - min(abs(stallion.surface_axis - race_surface_axis), 200) / 200
+distance_fit = 1 - min(abs(stallion.distance_m - race_distance_m), 600) / 600
+lineage_fit_score = (surface_fit * 0.55 + distance_fit * 0.45) * 100
 ```
 
-父名がCSVにない場合、または距離が取れない場合は中立値の `50` とします。
+最終的な血統レース条件適性は以下です。
+
+```text
+sire_fit_score =
+  min(100, sire_lineage_fit_score + max(0, dam_sire_lineage_fit_score - 50) * 0.35)
+```
+
+父名または母の父名がCSVにない場合、または距離が取れない場合は、その系統の単体適性を中立値の `50` とします。母の父が中立値以下の場合は減点せず、父の適性だけを使います。
 
 ### 総合力指数
 
@@ -282,7 +290,7 @@ overall_rank_score =
 - オッズは印決定には使っていません。表示用に人気順位だけを公開します。
 - 馬場状態、天候、枠順傾向は使っていません。
 - 騎手、斤量、性齢は取得しますが、現行スコアには使っていません。
-- 血統は父名のみを静的CSVに照合します。母父、牝系、調教、厩舎コメント、新聞印は使っていません。
+- 血統は父名と母の父名を静的CSVに照合します。牝系、調教、厩舎コメント、新聞印は使っていません。
 - JRA公式HTMLの構造変更に弱いです。
 - 着差の解釈は単純な括弧内数値の抽出です。
 - スコアは予測確率ではなく、順位付け用の指数です。
