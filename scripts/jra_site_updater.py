@@ -227,6 +227,16 @@ def fetch_detail_html(official_url: str) -> str:
     return jra_post(cname)
 
 
+def fetch_horses_with_retry(race: PublicRace, attempts: int = 3, delay_seconds: float = 1.0) -> list[InternalHorse]:
+    for attempt in range(attempts):
+        horses = parse_horses(fetch_detail_html(race.official_url))
+        if horses:
+            return horses
+        if attempt + 1 < attempts:
+            time.sleep(delay_seconds * (attempt + 1))
+    raise RuntimeError(f"No runners parsed for {race.venue} {race.race_no}R: {race.official_url}")
+
+
 def fetch_page(url: str) -> str:
     request = Request(
         url,
@@ -728,7 +738,7 @@ def fetch_official_races(target_date: dt.date, delay_seconds: float = 0.45) -> l
         for race in venue_races:
             race.odds_status = odds_status_for_race(target_date, race.start_time)
             time.sleep(delay_seconds)
-            horses = parse_horses(fetch_detail_html(race.official_url))
+            horses = fetch_horses_with_retry(race)
             race.runners = [
                 PublicRunner(
                     number=horse.number,
