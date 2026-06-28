@@ -90,6 +90,7 @@ TOKYO12Rの公開HTMLは、全ページの `<head>` 内にGoogle AnalyticsとGoo
 - タブ切替: `/assets/site.js` で `data-venue-tab` と `data-venue-panel` を同期する
 - 初期表示: 先頭の開催場を選択状態にする
 - URL hashが `#venue-1` などの開催場IDを指す場合は、その開催場を初期表示する
+- スマートフォン表示では `.topbar` の固定を解除し、`.venue-tabs` を `top: 0` で固定する。スクロール時に開催場タブがヘッダー下へ隠れないようにする
 
 予想ページの各レースカードには、結果ページの該当レースへ移動するリンクを必ず表示する。
 
