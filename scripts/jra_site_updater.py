@@ -1137,7 +1137,18 @@ def render_index(date_label: str, date_key: str, races: list[PublicRace], genera
         body = '<section class="empty">開催情報はまだ取得できていません。</section>'
     else:
         sections = []
-        for venue in venues:
+        tabs = []
+        for index, venue in enumerate(venues):
+            venue_id = f"venue-{index + 1}"
+            active = "true" if index == 0 else "false"
+            tabs.append(
+                f"""
+                <button class="venue-tab" type="button" role="tab" aria-selected="{active}" aria-controls="{venue_id}" data-venue-tab="{venue_id}">
+                  <span>{html.escape(venue)}</span>
+                  <small>{len([item for item in races if item.venue == venue])}R</small>
+                </button>
+                """
+            )
             cards = []
             for race in sorted([item for item in races if item.venue == venue], key=lambda item: item.race_no):
                 cards.append(
@@ -1159,13 +1170,13 @@ def render_index(date_label: str, date_key: str, races: list[PublicRace], genera
                 )
             sections.append(
                 f"""
-                <section class="venue">
+                <section class="venue" id="{venue_id}" role="tabpanel" data-venue-panel="{venue_id}">
                   <header><h2>{html.escape(venue)}</h2><span>{len(cards)} races</span></header>
                   <div class="race-list">{"".join(cards)}</div>
                 </section>
                 """
             )
-        body = f'<div class="venue-board venue-count-{len(venues)}">{"".join(sections)}</div>'
+        body = f'<section class="venue-tabs" role="tablist">{"".join(tabs)}</section>{"".join(sections)}'
     return f"""<!doctype html>
 <html lang="ja">
 <head>
@@ -1175,6 +1186,7 @@ def render_index(date_label: str, date_key: str, races: list[PublicRace], genera
   <meta name="description" content="中央競馬の予想印と買い目を公開するTOKYO12R by ZINです。">
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/assets/site.css">
+  <script src="/assets/site.js" defer></script>
 {GOOGLE_ANALYTICS_SCRIPT}
 {ADSENSE_SCRIPT}
 </head>
@@ -1310,15 +1322,17 @@ main { width:min(1180px, calc(100vw - 24px)); margin:16px auto 40px; }
 .summary p { margin:4px 0 0; color:var(--muted); }
 .date { font-weight:800; font-size:22px; }
 .badge { white-space:nowrap; border-radius:999px; padding:8px 10px; background:#edf8ef; color:var(--deep); font-size:13px; border:1px solid #cce8d5; }
-.venue-board { display:grid; gap:14px; margin-top:14px; align-items:start; }
-.venue-count-1 { grid-template-columns:minmax(0, 1fr); }
-.venue-count-2 { grid-template-columns:repeat(2, minmax(0, 1fr)); }
-.venue-count-3 { grid-template-columns:repeat(3, minmax(0, 1fr)); }
-.venue { background:var(--panel); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+.venue-tabs { position:sticky; top:60px; z-index:1; display:flex; gap:8px; margin-top:14px; padding:10px 0; overflow-x:auto; background:var(--bg); scrollbar-width:thin; }
+.venue-tab { flex:0 0 auto; display:grid; gap:2px; min-width:104px; padding:10px 14px; border:1px solid var(--line); border-radius:8px 8px 0 0; background:#fff; color:var(--ink); font:inherit; text-align:left; cursor:pointer; }
+.venue-tab span { font-weight:800; white-space:nowrap; }
+.venue-tab small { color:var(--muted); font-size:12px; }
+.venue-tab[aria-selected="true"] { border-color:var(--green); background:var(--green); color:#fff; box-shadow:inset 0 -3px 0 var(--gold); }
+.venue-tab[aria-selected="true"] small { color:#e5f5eb; }
+.venue { margin-top:14px; background:var(--panel); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
 .venue > header { display:flex; justify-content:space-between; align-items:center; padding:12px 14px; border-bottom:1px solid var(--line); background:#f9fcfa; }
 .venue h2 { margin:0; font-size:18px; }
 .venue header span { color:var(--muted); font-size:13px; }
-.race-list { display:grid; grid-template-columns:1fr; gap:1px; background:var(--line); }
+.race-list { display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:1px; background:var(--line); }
 .race-card { padding:13px; background:white; min-height:246px; scroll-margin-top:82px; }
 .result-race-card { min-height:auto; scroll-margin-top:96px; }
 .race-head { display:grid; grid-template-columns:auto 1fr auto; gap:9px; align-items:start; }
@@ -1365,9 +1379,39 @@ main { width:min(1180px, calc(100vw - 24px)); margin:16px auto 40px; }
 .muted, .empty { color:var(--muted); }
 .empty { margin-top:14px; padding:28px; background:white; border:1px solid var(--line); border-radius:8px; text-align:center; }
 footer { width:min(1180px, calc(100vw - 24px)); margin:0 auto 32px; color:var(--muted); font-size:12px; line-height:1.7; }
-@media (max-width:960px) { .venue-count-3 { grid-template-columns:1fr; } }
-@media (max-width:760px) { .venue-count-2 { grid-template-columns:1fr; } }
-@media (max-width:640px) { .topbar,.summary { align-items:flex-start; flex-direction:column; } nav { width:100%; justify-content:stretch; } nav a { flex:1 1 46%; text-align:center; } .hero-banner { min-height:180px; aspect-ratio:16 / 9; } .hero-copy { left:16px; bottom:16px; } .result-race-card { scroll-margin-top:132px; } .bet-outcomes li { grid-template-columns:1fr; } .bet-outcomes small, .bet-outcomes b { grid-column:auto; grid-row:auto; } }
+@media (max-width:640px) { .topbar,.summary { align-items:flex-start; flex-direction:column; } nav { width:100%; justify-content:stretch; } nav a { flex:1 1 46%; text-align:center; } .hero-banner { min-height:180px; aspect-ratio:16 / 9; } .hero-copy { left:16px; bottom:16px; } .venue-tabs { top:78px; margin-inline:-12px; padding-inline:12px; } .venue-tab { min-width:92px; padding:9px 12px; } .race-list { grid-template-columns:1fr; } .race-card, .result-race-card { scroll-margin-top:132px; } .bet-outcomes li { grid-template-columns:1fr; } .bet-outcomes small, .bet-outcomes b { grid-column:auto; grid-row:auto; } }
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    (assets / "site.js").write_text(
+        """
+(() => {
+  const tabs = Array.from(document.querySelectorAll("[data-venue-tab]"));
+  const panels = Array.from(document.querySelectorAll("[data-venue-panel]"));
+  if (!tabs.length || !panels.length) return;
+
+  const activate = (id, updateHash = true) => {
+    tabs.forEach((tab) => {
+      const selected = tab.dataset.venueTab === id;
+      tab.setAttribute("aria-selected", selected ? "true" : "false");
+    });
+    panels.forEach((panel) => {
+      panel.hidden = panel.dataset.venuePanel !== id;
+    });
+    if (updateHash) {
+      history.replaceState(null, "", `#${id}`);
+    }
+  };
+
+  tabs.forEach((tab) => {
+    tab.addEventListener("click", () => activate(tab.dataset.venueTab));
+  });
+
+  const initial = location.hash.slice(1);
+  const initialTab = tabs.find((tab) => tab.dataset.venueTab === initial) || tabs[0];
+  activate(initialTab.dataset.venueTab, Boolean(initial));
+})();
 """.strip()
         + "\n",
         encoding="utf-8",
