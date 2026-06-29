@@ -27,6 +27,7 @@ ACCESS_S_URL = f"{BASE_URL}/JRADB/accessS.html"
 JST = ZoneInfo("Asia/Tokyo")
 SITE_TITLE = "TOKYO12R by ZIN"
 USER_AGENT = "TOKYO12R-by-ZIN/0.1 (+official-source-check)"
+SITE_URL = "https://tokyo12r.byzin.win"
 BANNER_ASSET_NAME = "tokyo12r-paddock-banner.jpg"
 MARKS = ["◎", "○", "▲", "△", "☆"]
 DAM_SIRE_BONUS_WEIGHT = 0.35
@@ -1193,7 +1194,12 @@ def render_index(date_label: str, date_key: str, races: list[PublicRace], genera
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{SITE_TITLE}</title>
-  <meta name="description" content="中央競馬の予想印と買い目を公開するTOKYO12R by ZINです。">
+  <meta name="description" content="中央競馬の開催場別予想印、買い目、レース結果を公開するTOKYO12R by ZINです。">
+  <link rel="canonical" href="{SITE_URL}/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="{SITE_TITLE}">
+  <meta property="og:description" content="中央競馬の予想印と買い目を開催場ごとに掲載します。">
+  <meta property="og:url" content="{SITE_URL}/">
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/assets/site.css">
   <script src="/assets/site.js" defer></script>
@@ -1207,7 +1213,7 @@ def render_index(date_label: str, date_key: str, races: list[PublicRace], genera
   </header>
   <main>
     <section class="hero-banner" aria-label="TOKYO12R paddock banner">
-      <img src="/assets/{BANNER_ASSET_NAME}" alt="">
+      <img src="/assets/{BANNER_ASSET_NAME}" alt="TOKYO12R by ZIN 中央競馬予想">
       <div class="hero-shade"></div>
       <div class="hero-copy">
         <span>JRA Forecast</span>
@@ -1274,6 +1280,11 @@ def render_results(date_label: str, date_key: str, races: list[PublicRace], gene
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>結果 {date_key} | {SITE_TITLE}</title>
   <meta name="description" content="TOKYO12Rの予想印とレース結果です。">
+  <link rel="canonical" href="{SITE_URL}/result{date_key}.html">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="結果 {date_key} | {SITE_TITLE}">
+  <meta property="og:description" content="TOKYO12Rの{date_key}開催分の予想印、レース結果、買い目結果です。">
+  <meta property="og:url" content="{SITE_URL}/result{date_key}.html">
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/assets/site.css">
 {GOOGLE_ANALYTICS_SCRIPT}
@@ -1455,16 +1466,23 @@ def generate(
             json.dumps(oci_payload(target_date, generated_at, races), ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
-    (output / "robots.txt").write_text("User-agent: *\nAllow: /\n", encoding="utf-8")
+    (output / "robots.txt").write_text(
+        f"""User-agent: *
+Allow: /
+
+Sitemap: {SITE_URL}/sitemap.xml
+""",
+        encoding="utf-8",
+    )
     (output / "sitemap.xml").write_text(
         f"""<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://tokyo12r.byzin.win/</loc>
+    <loc>{SITE_URL}/</loc>
     <lastmod>{target_date.isoformat()}</lastmod>
   </url>
   <url>
-    <loc>https://tokyo12r.byzin.win/result{date_key}.html</loc>
+    <loc>{SITE_URL}/result{date_key}.html</loc>
     <lastmod>{target_date.isoformat()}</lastmod>
   </url>
 </urlset>
