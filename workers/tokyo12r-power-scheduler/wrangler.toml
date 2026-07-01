@@ -1,0 +1,14 @@
+name = "tokyo12r-power-scheduler"
+main = "src/index.js"
+compatibility_date = "2026-07-01"
+account_id = "f1c9342add3468d5cfeefba30a048913"
+workers_dev = false
+
+[triggers]
+crons = [
+  "0 13 * * FRI",
+  "0 9 * * TUE",
+]
+
+[vars]
+WEBARENA_INSTANCE_ID = "788730"

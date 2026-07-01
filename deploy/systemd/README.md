@@ -42,6 +42,17 @@ Run once manually:
 sudo systemctl start tokyo12r-feature-update.service
 ```
 
+Schedule:
+
+- Fri 22:10 JST
+- Sat/Sun 08:33, 12:33, 15:12, 15:57, 17:33 JST
+- Mon/Tue 08:33, 12:33, 15:12, 15:57, 17:33 JST
+
+On Monday and Tuesday, the first no-race check writes
+`/opt/tokyo12r/var/no-race-YYYY-MM-DD.marker` when no JRA races are found.
+Subsequent slots for the same day exit successfully without doing the full
+pipeline unless `--ignore-no-race-marker` is supplied.
+
 The service runs `scripts/jra_oci_batch.py`, which fetches official JRA race
 cards, generates `site-dist`, writes private runner data to
 `/opt/tokyo12r/var/oci-data.json`, ingests it into SQLite, and exports

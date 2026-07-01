@@ -81,6 +81,8 @@ TOKYO12Rの公開HTMLは、全ページの `<head>` 内にGoogle AnalyticsとGoo
 - レースカード: レース番号、レース名、条件、発走時刻、予想印、買い目、結果ページへのリンク
 - フッター: 年齢注意などの補足
 
+予想印は印、馬番、馬名、人気を同じ行に表示する。
+
 開催場表示は地方競馬 Today と同じタブ型にする。
 
 - タブ要素: `.venue-tabs`, `.venue-tab`
@@ -233,15 +235,46 @@ VPSのtimezoneを `Asia/Tokyo` に設定する。
 
 通常更新:
 
-- 金曜 22:00 JST
-- 土曜 09:32, 10:32, ..., 17:32 JST
-- 日曜 09:32, 10:32, ..., 17:32 JST
-- 月曜 09:32, 10:32, ..., 17:32 JST
-- 火曜 09:32, 10:32, ..., 17:32 JST
+- 金曜 22:10 JST
+- 土曜 08:33, 12:33, 15:12, 15:57, 17:33 JST
+- 日曜 08:33, 12:33, 15:12, 15:57, 17:33 JST
+- 月曜 08:33, 12:33, 15:12, 15:57, 17:33 JST
+- 火曜 08:33, 12:33, 15:12, 15:57, 17:33 JST
 
-月曜・火曜は開催がある場合のみ実処理する。スケジュール自体は毎週起動し、スクリプト側で開催なしなら正常終了する。
+金曜夜は翌営業開催を拾うため、当日から最大4日先まで公式出馬表を確認する。
+土曜・日曜・月曜・火曜の更新では対象日を確認する。
 
-最大実行回数は週37回程度。
+月曜・火曜は開催がある場合のみ実処理する。08:33 JSTの開催チェックで開催がないと判定した場合は、その日の `no-race` マーカーを作成し、以後の同日スケジュールは正常終了する。
+
+更新のたびに全開催場の人気順を取得し、公開データを更新する。
+
+### Cloudflare Workers CronによるVPS電源制御
+
+WebARENA Indigo VPSは火曜18:00 JSTから金曜22:00 JSTまで停止期間とする。
+
+- 起動トリガー: 金曜 22:00 JST
+- 停止トリガー: 火曜 18:00 JST
+- 実装: Cloudflare Workers Cron
+- Worker名: `tokyo12r-power-scheduler`
+- Cron式はCloudflareの仕様に合わせてUTCで定義する
+  - 金曜22:00 JST: `0 13 * * FRI`
+  - 火曜18:00 JST: `0 9 * * TUE`
+
+WorkerはWebARENA APIでアクセストークンを取得し、対象インスタンスID `788730` に対して `start` / `stop` を実行する。
+API Key、API Secret、手動実行用トークンはWorker Secretとして保存し、リポジトリにコミットしない。
+
+### WebARENA API利用時の注意
+
+WebARENA Indigo APIのインスタンス停止起動では次の点に注意する。
+
+- API Key単体をBearer Tokenとして使う構成ではない。API Keyを `clientId`、API Secretを `clientSecret` としてアクセストークンを発行してから利用する。
+- アクセストークン発行は `POST https://api.customer.jp/oauth/v1/accesstokens` を利用する。
+- インスタンス一覧は `GET https://api.customer.jp/webarenaIndigo/v1/vm/getinstancelist` を利用する。
+- 停止起動は `POST https://api.customer.jp/webarenaIndigo/v1/vm/instance/statusupdate` を利用する。
+- `statusupdate` は公式例に合わせ、`Content-Type: application/json` を明示しない。明示するとバリデーションエラーになる場合がある。
+- APIにはレート制限がある。実測では短時間連続呼び出しでHTTP 429が返るため、Worker内ではAPI呼び出し間に待機を入れる。
+- 停止要求は `success=false` でも `sucessCode=I10025` の場合、停止処理受付として扱う。
+- APIレスポンスには `successCode` ではなく `sucessCode` と返る場合があるため、実装では両方を考慮する。
 
 ## データ保存
 

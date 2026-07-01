@@ -59,6 +59,26 @@ def should_dispatch(value: str | None) -> bool:
     return (value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def default_fetch_days(target_date: dt.date) -> int:
+    # Friday night prepares the next available racing day. Other update slots only inspect the target date.
+    return 4 if target_date.weekday() == 4 else 1
+
+
+def no_race_marker(repo_dir: Path, target_date: dt.date) -> Path:
+    return repo_dir / "var" / f"no-race-{target_date.isoformat()}.marker"
+
+
+def should_use_no_race_marker(target_date: dt.date) -> bool:
+    return target_date.weekday() in {0, 1}
+
+
+def public_race_count(public_data: Path) -> int:
+    if not public_data.exists():
+        return 0
+    payload = json.loads(public_data.read_text(encoding="utf-8"))
+    return len(payload.get("races", []))
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the TOKYO12R OCI-side JRA batch.")
     parser.add_argument("--repo-dir", type=Path, default=Path("/opt/tokyo12r"))
@@ -69,6 +89,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--oci-data", type=Path, default=Path("/opt/tokyo12r/var/oci-data.json"))
     parser.add_argument("--date", default=dt.datetime.now(JST).date().isoformat())
     parser.add_argument("--delay", type=float, default=0.45)
+    parser.add_argument("--fetch-days", type=int, help="number of days to scan for official race cards")
+    parser.add_argument("--ignore-no-race-marker", action="store_true")
     parser.add_argument("--skip-pull", action="store_true")
     return parser.parse_args()
 
@@ -77,10 +99,17 @@ def main() -> int:
     args = parse_args()
     repo_dir = args.repo_dir.resolve()
     output_dir = args.output.resolve()
+    target_date = dt.date.fromisoformat(args.date)
+    marker = no_race_marker(repo_dir, target_date)
+
+    if should_use_no_race_marker(target_date) and marker.exists() and not args.ignore_no_race_marker:
+        print(f"No-race marker exists for {target_date}; skipping update.", flush=True)
+        return 0
 
     if not args.skip_pull and (repo_dir / ".git").exists():
         run_command(["git", "pull", "--ff-only"], repo_dir)
 
+    fetch_days = args.fetch_days if args.fetch_days is not None else default_fetch_days(target_date)
     run_command(
         [
             "python3",
@@ -90,6 +119,8 @@ def main() -> int:
             "--date",
             args.date,
             "--fetch-official",
+            "--fetch-days",
+            str(fetch_days),
             "--delay",
             str(args.delay),
             "--oci-data-output",
@@ -98,6 +129,14 @@ def main() -> int:
         repo_dir,
     )
     public_data = args.oci_data if args.oci_data.exists() else latest_public_data(output_dir)
+    race_count = public_race_count(public_data)
+    if should_use_no_race_marker(target_date) and race_count == 0:
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(f"{dt.datetime.now(JST).isoformat()} no races for {target_date}\n", encoding="utf-8")
+        print(f"No races found for {target_date}; wrote {marker} and stopped before feature export/dispatch.", flush=True)
+        return 0
+    if marker.exists() and race_count > 0:
+        marker.unlink()
     print(f"Using OCI data: {public_data}", flush=True)
     run_command(
         [

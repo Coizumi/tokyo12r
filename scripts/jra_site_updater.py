@@ -1054,10 +1054,16 @@ def render_picks(race: PublicRace) -> str:
         popularity = ""
         if pick.popularity_rank:
             popularity = f'<span class="popularity">{pick.popularity_rank} 人気（{html.escape(pick.popularity_status)}）</span>'
+        horse_no = (
+            f'<span class="pick-horse-no">{html.escape(pick.horse_number)}</span>'
+            if pick.horse_number
+            else '<span class="pick-horse-no is-empty" aria-hidden="true"></span>'
+        )
         items.append(
             f"""
             <li>
               <span class="mark">{html.escape(pick.mark)}</span>
+              {horse_no}
               <span class="pick-line"><b>{html.escape(pick.name)}</b>{popularity}</span>
             </li>
             """
@@ -1351,9 +1357,11 @@ main { width:min(1180px, calc(100vw - 24px)); margin:16px auto 40px; }
 .race-head p { margin:4px 0 0; color:var(--muted); font-size:12px; line-height:1.4; }
 .race-head time { color:var(--deep); font-weight:800; white-space:nowrap; }
 .picks { display:grid; gap:6px; margin:12px 0 0; padding:0; list-style:none; }
-.picks li { display:grid; grid-template-columns:30px minmax(0,1fr); gap:7px; align-items:center; padding:7px; border:1px solid #d6eadc; border-radius:7px; background:#f8fcf9; }
+.picks li { display:grid; grid-template-columns:30px 28px minmax(0,1fr); gap:7px; align-items:center; padding:7px; border:1px solid #d6eadc; border-radius:7px; background:#f8fcf9; }
 .pick-line { min-width:0; display:flex; align-items:center; justify-content:space-between; gap:8px; }
 .picks b { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.pick-horse-no { display:grid; place-items:center; width:26px; height:26px; border-radius:5px; background:#fff; border:1px solid #cce8d5; color:var(--deep); font-weight:900; font-size:13px; }
+.pick-horse-no.is-empty { visibility:hidden; }
 .popularity { flex:0 0 auto; border:1px solid #cce8d5; border-radius:999px; padding:3px 6px; background:white; color:var(--deep); font-size:11px; font-weight:800; white-space:nowrap; }
 .mark { display:grid; place-items:center; width:28px; height:28px; border-radius:50%; background:var(--green); color:white; font-weight:900; }
 .race-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:10px; }
@@ -1480,13 +1488,14 @@ def main() -> int:
     parser.add_argument("--input", type=Path, help="sanitized public JSON generated earlier")
     parser.add_argument("--oci-data-output", type=Path, help="private OCI JSON output with runners and bloodline fields")
     parser.add_argument("--fetch-official", action="store_true", help="fetch current JRA official race card HTML")
+    parser.add_argument("--fetch-days", type=int, default=4, help="number of days to scan when --fetch-official is used")
     parser.add_argument("--delay", type=float, default=0.45, help="seconds between official JRA requests")
     args = parser.parse_args()
 
     target_date = dt.date.fromisoformat(args.date)
     generated_at = dt.datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S JST")
     if args.fetch_official:
-        target_date, races = fetch_next_available_races(target_date, args.delay)
+        target_date, races = fetch_next_available_races(target_date, args.delay, max(1, args.fetch_days))
     else:
         races, loaded_generated_at = load_public_payload(args.input, target_date)
         generated_at = loaded_generated_at or generated_at

@@ -2,11 +2,27 @@
 Description=Schedule TOKYO12R JRA feature updates
 
 [Timer]
-OnCalendar=Fri *-*-* 22:00:00
-OnCalendar=Sat *-*-* 09..17:32:00
-OnCalendar=Sun *-*-* 09..17:32:00
-OnCalendar=Mon *-*-* 09..17:32:00
-OnCalendar=Tue *-*-* 09..17:32:00
+OnCalendar=Fri *-*-* 22:10:00
+OnCalendar=Sat *-*-* 08:33:00
+OnCalendar=Sat *-*-* 12:33:00
+OnCalendar=Sat *-*-* 15:12:00
+OnCalendar=Sat *-*-* 15:57:00
+OnCalendar=Sat *-*-* 17:33:00
+OnCalendar=Sun *-*-* 08:33:00
+OnCalendar=Sun *-*-* 12:33:00
+OnCalendar=Sun *-*-* 15:12:00
+OnCalendar=Sun *-*-* 15:57:00
+OnCalendar=Sun *-*-* 17:33:00
+OnCalendar=Mon *-*-* 08:33:00
+OnCalendar=Mon *-*-* 12:33:00
+OnCalendar=Mon *-*-* 15:12:00
+OnCalendar=Mon *-*-* 15:57:00
+OnCalendar=Mon *-*-* 17:33:00
+OnCalendar=Tue *-*-* 08:33:00
+OnCalendar=Tue *-*-* 12:33:00
+OnCalendar=Tue *-*-* 15:12:00
+OnCalendar=Tue *-*-* 15:57:00
+OnCalendar=Tue *-*-* 17:33:00
 Persistent=true
 RandomizedDelaySec=0
 Unit=tokyo12r-feature-update.service
