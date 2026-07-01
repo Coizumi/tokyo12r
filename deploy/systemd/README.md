@@ -1,6 +1,6 @@
-# TOKYO12R OCI systemd units
+# TOKYO12R VPS systemd units
 
-These units run the OCI-side JRA feature pipeline.
+These units run the WebARENA Indigo VPS-side JRA feature pipeline.
 
 Assumed deployment directory:
 
@@ -8,10 +8,12 @@ Assumed deployment directory:
 /opt/tokyo12r
 ```
 
-Install on the OCI VM:
+Install on the VPS:
 
 ```bash
 sudo timedatectl set-timezone Asia/Tokyo
+sudo useradd --system --create-home --shell /usr/sbin/nologin tokyo12r || true
+sudo chown -R tokyo12r:tokyo12r /opt/tokyo12r
 sudo cp deploy/systemd/tokyo12r-feature-update.service /etc/systemd/system/
 sudo cp deploy/systemd/tokyo12r-feature-update.timer /etc/systemd/system/
 sudo systemctl daemon-reload
@@ -24,7 +26,7 @@ Optional GitHub Actions dispatch is controlled by:
 sudoedit /etc/tokyo12r-feature-pipeline.env
 ```
 
-Set `TOKYO12R_DISPATCH_WORKFLOW=1` and `GITHUB_TOKEN` only when the OCI batch
+Set `TOKYO12R_DISPATCH_WORKFLOW=1` and `GITHUB_TOKEN` only when the VPS batch
 should trigger the Cloudflare Pages deploy workflow after a successful run.
 
 Check status:

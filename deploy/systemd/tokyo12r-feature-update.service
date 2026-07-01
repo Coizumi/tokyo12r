@@ -5,8 +5,8 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-User=opc
-Group=opc
+User=tokyo12r
+Group=tokyo12r
 WorkingDirectory=/opt/tokyo12r
 Environment=PYTHONUNBUFFERED=1
 EnvironmentFile=-/etc/tokyo12r-feature-pipeline.env
