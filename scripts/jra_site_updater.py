@@ -1079,22 +1079,17 @@ def render_result_button(date_key: str, race: PublicRace) -> str:
     )
 
 
-def render_bets(race: PublicRace) -> str:
-    sections = bet_sections(race.picks)
-    if not sections:
-        return ""
-    rows = []
-    for section in sections:
-        rows.append(
-            f"""
-            <li>
-              <strong>{html.escape(str(section["label"]))}</strong>
-              <span>{html.escape(str(section["formula"]))}</span>
-              <em>{int(section["count"])}点</em>
-            </li>
-            """
-        )
-    return f'<ul class="bets">{"".join(rows)}</ul>'
+def render_common_bets() -> str:
+    rows = [
+        ("馬連フォーメーション", "◎○ - ○▲△☆", "7点"),
+        ("3連複BOX", "◎○▲△☆", "10点"),
+        ("3連単フォーメーション", "◎○ - ◎○▲ - ◎○▲△☆", "12点"),
+    ]
+    items = "".join(
+        f'<li><strong>{html.escape(label)}</strong><span>{html.escape(formula)}</span><em>{html.escape(count)}</em></li>'
+        for label, formula, count in rows
+    )
+    return f'<section class="common-bets" aria-label="各レース共通の買い目"><b>各レース共通の買い目</b><ul>{items}</ul></section>'
 
 
 def site_nav(date_key: str) -> str:
@@ -1180,7 +1175,6 @@ def render_index(date_label: str, date_key: str, races: list[PublicRace], genera
                       </div>
                       {render_picks(race)}
                       {render_result_button(date_key, race)}
-                      {render_bets(race)}
                     </article>
                     """
                 )
@@ -1192,7 +1186,7 @@ def render_index(date_label: str, date_key: str, races: list[PublicRace], genera
                 </section>
                 """
             )
-        body = f'<section class="venue-tabs" role="tablist">{"".join(tabs)}</section>{"".join(sections)}'
+        body = f'<section class="venue-tabs" role="tablist">{"".join(tabs)}</section>{render_common_bets()}{"".join(sections)}'
     return f"""<!doctype html>
 <html lang="ja">
 <head>
@@ -1344,6 +1338,12 @@ main { width:min(1180px, calc(100vw - 24px)); margin:16px auto 40px; }
 .venue-tab small { color:var(--muted); font-size:12px; }
 .venue-tab[aria-selected="true"] { border-color:var(--green); background:var(--green); color:#fff; box-shadow:inset 0 -3px 0 var(--gold); }
 .venue-tab[aria-selected="true"] small { color:#e5f5eb; }
+.common-bets { display:flex; flex-wrap:wrap; align-items:center; gap:7px 10px; margin-top:6px; padding:8px 10px; border:1px solid var(--line); border-radius:7px; background:#fff; color:var(--muted); font-size:12px; line-height:1.45; }
+.common-bets b { color:var(--deep); font-size:12px; }
+.common-bets ul { display:flex; flex-wrap:wrap; gap:6px 10px; margin:0; padding:0; list-style:none; }
+.common-bets li { display:flex; align-items:center; gap:4px; }
+.common-bets strong { color:var(--ink); font-weight:800; }
+.common-bets em { color:var(--deep); font-style:normal; font-weight:800; white-space:nowrap; }
 .venue { margin-top:14px; background:var(--panel); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
 .venue > header { display:flex; justify-content:space-between; align-items:center; padding:12px 14px; border-bottom:1px solid var(--line); background:#f9fcfa; }
 .venue h2 { margin:0; font-size:18px; }
@@ -1380,11 +1380,6 @@ main { width:min(1180px, calc(100vw - 24px)); margin:16px auto 40px; }
 .result-list b { display:grid; place-items:center; min-width:24px; height:24px; border-radius:5px; background:var(--green); color:white; }
 .result-list strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .result-list.pending { margin-top:12px; padding:12px; border:1px solid #d6dbe1; border-radius:7px; background:#f1f5f9; color:#475569; font-weight:800; }
-.bets { display:grid; gap:6px; margin:10px 0 0; padding:0; list-style:none; }
-.bets li { display:grid; grid-template-columns:1fr auto; gap:5px 8px; padding:7px; border-radius:7px; background:#fff8e5; border:1px solid #f0deb0; font-size:12px; }
-.bets strong { color:#4d3a05; }
-.bets span { color:#665526; }
-.bets em { grid-row:1 / 3; grid-column:2; align-self:center; color:var(--deep); font-style:normal; font-weight:800; }
 .bet-outcomes { display:grid; gap:7px; margin:12px 0 0; padding:0; list-style:none; }
 .bet-outcomes li { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:4px 10px; align-items:center; padding:9px; border-radius:7px; font-size:12px; }
 .bet-outcomes span { font-weight:800; }
