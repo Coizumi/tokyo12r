@@ -20,14 +20,20 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now tokyo12r-feature-update.timer
 ```
 
-Optional GitHub Actions dispatch is controlled by:
+Cloudflare Pages direct deploy is controlled by:
 
 ```bash
 sudoedit /etc/tokyo12r-feature-pipeline.env
 ```
 
-Set `TOKYO12R_DISPATCH_WORKFLOW=1` and `GITHUB_TOKEN` only when the VPS batch
-should trigger the Cloudflare Pages deploy workflow after a successful run.
+Set `CLOUDFLARE_PAGES_DEPLOY=1`, `CLOUDFLARE_API_TOKEN`,
+`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_PAGES_PROJECT_NAME=tokyo12r`, and
+`CLOUDFLARE_PAGES_BRANCH=main` so the VPS batch deploys `site-dist` directly
+to Cloudflare Pages after a successful run.
+
+GitHub Actions dispatch remains available as a backup path. Set
+`TOKYO12R_DISPATCH_WORKFLOW=1` and `GITHUB_TOKEN` only when the VPS batch
+should also trigger the Cloudflare Pages deploy workflow.
 
 Check status:
 

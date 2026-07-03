@@ -59,6 +59,29 @@ def should_dispatch(value: str | None) -> bool:
     return (value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def should_deploy(value: str | None) -> bool:
+    return (value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def cloudflare_pages_deploy(output_dir: Path, cwd: Path) -> None:
+    token = os.environ.get("CLOUDFLARE_API_TOKEN", "").strip()
+    if not token:
+        raise RuntimeError("CLOUDFLARE_PAGES_DEPLOY is enabled but CLOUDFLARE_API_TOKEN is empty.")
+    project_name = os.environ.get("CLOUDFLARE_PAGES_PROJECT_NAME", "tokyo12r").strip() or "tokyo12r"
+    branch = os.environ.get("CLOUDFLARE_PAGES_BRANCH", "main").strip() or "main"
+    command = [
+        "npx",
+        "--yes",
+        "wrangler@latest",
+        "pages",
+        "deploy",
+        str(output_dir),
+        f"--project-name={project_name}",
+        f"--branch={branch}",
+    ]
+    run_command(command, cwd)
+
+
 def default_fetch_days(target_date: dt.date) -> int:
     # Friday night prepares the next available racing day. Other update slots only inspect the target date.
     return 4 if target_date.weekday() == 4 else 1
@@ -153,6 +176,11 @@ def main() -> int:
         ],
         repo_dir,
     )
+
+    if should_deploy(os.environ.get("CLOUDFLARE_PAGES_DEPLOY")):
+        cloudflare_pages_deploy(output_dir, repo_dir)
+    else:
+        print("Cloudflare Pages direct deploy is disabled.", flush=True)
 
     if should_dispatch(os.environ.get("TOKYO12R_DISPATCH_WORKFLOW")):
         token = os.environ.get("GITHUB_TOKEN", "").strip()
