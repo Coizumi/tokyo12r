@@ -163,8 +163,12 @@ Ubuntuの場合:
 ```bash
 sudo apt update
 sudo apt -y upgrade
-sudo apt -y install git python3 python3-pip python3-venv python3-bs4 sqlite3 curl nodejs npm
+sudo apt -y install git python3 python3-pip python3-venv python3-bs4 sqlite3 curl
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt -y install nodejs
 ```
+
+Cloudflare Wrangler最新版はNode.js 22以上を要求するため、Ubuntu標準リポジトリのNode.js 18ではなくNodeSourceのNode.js 22を利用する。
 
 ```bash
 ubuntu@i-53100000788730:~$ sudo apt -y install git python3 python3-pip python3-venv python3-bs4 sqlite3 curl

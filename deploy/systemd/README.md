@@ -1,6 +1,8 @@
 # TOKYO12R VPS systemd units
 
 These units run the WebARENA Indigo VPS-side JRA feature pipeline.
+Cloudflare Pages direct deploy requires Node.js 22 or newer because Wrangler
+4.x requires it.
 
 Assumed deployment directory:
 
