@@ -1348,7 +1348,7 @@ main { width:min(1180px, calc(100vw - 24px)); margin:16px auto 40px; }
 .venue > header { display:flex; justify-content:space-between; align-items:center; padding:12px 14px; border-bottom:1px solid var(--line); background:#f9fcfa; }
 .venue h2 { margin:0; font-size:18px; }
 .venue header span { color:var(--muted); font-size:13px; }
-.race-list { display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:1px; background:var(--line); }
+.race-list { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:1px; background:var(--line); }
 .race-card { padding:13px; background:white; min-height:246px; scroll-margin-top:82px; }
 .result-race-card { min-height:auto; scroll-margin-top:96px; }
 .race-head { display:grid; grid-template-columns:auto 1fr auto; gap:9px; align-items:start; }
@@ -1358,8 +1358,8 @@ main { width:min(1180px, calc(100vw - 24px)); margin:16px auto 40px; }
 .race-head time { color:var(--deep); font-weight:800; white-space:nowrap; }
 .picks { display:grid; gap:6px; margin:12px 0 0; padding:0; list-style:none; }
 .picks li { display:grid; grid-template-columns:30px 28px minmax(0,1fr); gap:7px; align-items:center; padding:7px; border:1px solid #d6eadc; border-radius:7px; background:#f8fcf9; }
-.pick-line { min-width:0; display:flex; align-items:center; justify-content:space-between; gap:8px; }
-.picks b { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.pick-line { min-width:0; display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:start; gap:8px; }
+.picks b { min-width:0; overflow:visible; text-overflow:clip; white-space:normal; overflow-wrap:anywhere; line-height:1.35; }
 .pick-horse-no { display:grid; place-items:center; width:26px; height:26px; border-radius:5px; background:#fff; border:1px solid #cce8d5; color:var(--deep); font-weight:900; font-size:13px; }
 .pick-horse-no.is-empty { visibility:hidden; }
 .popularity { flex:0 0 auto; border:1px solid #cce8d5; border-radius:999px; padding:3px 6px; background:white; color:var(--deep); font-size:11px; font-weight:800; white-space:nowrap; }
@@ -1397,6 +1397,7 @@ main { width:min(1180px, calc(100vw - 24px)); margin:16px auto 40px; }
 .muted, .empty { color:var(--muted); }
 .empty { margin-top:14px; padding:28px; background:white; border:1px solid var(--line); border-radius:8px; text-align:center; }
 footer { width:min(1180px, calc(100vw - 24px)); margin:0 auto 32px; color:var(--muted); font-size:12px; line-height:1.7; }
+@media (max-width:980px) { .race-list { grid-template-columns:repeat(2, minmax(0, 1fr)); } }
 @media (max-width:640px) { .topbar { position:static; } .topbar,.summary { align-items:flex-start; flex-direction:column; } nav { width:100%; justify-content:stretch; } nav a { flex:1 1 46%; text-align:center; } .hero-banner { min-height:180px; aspect-ratio:16 / 9; } .hero-copy { left:16px; bottom:16px; } .venue-tabs { top:0; z-index:3; margin-inline:-12px; padding-inline:12px; border-bottom:1px solid var(--line); } .venue-tab { min-width:92px; padding:9px 12px; } .race-list { grid-template-columns:1fr; } .race-card, .result-race-card { scroll-margin-top:72px; } .bet-outcomes li { grid-template-columns:1fr; } .bet-outcomes small, .bet-outcomes b { grid-column:auto; grid-row:auto; } }
 """.strip()
         + "\n",
