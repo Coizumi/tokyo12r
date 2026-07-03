@@ -17,6 +17,7 @@ These rules apply to the TOKYO12R repository under this directory.
 - Do not move heavy data collection or historical recalculation into GitHub Actions unless `specs.md` is explicitly changed to allow it.
 - VPS-side batch execution should remain on WebARENA Indigo unless the infrastructure section of `specs.md` is changed.
 - Cloudflare Worker secrets, WebARENA API credentials, GitHub tokens, and SSH private keys must not be committed.
+- When connecting to the WebARENA VPS from Windows, prefer using a temporary copy of the SSH private key that is created by the real Windows user with escalated permissions, owned by that real user, and ACL-restricted to that user only. Use that temporary key for `ssh`/`scp`, then restore delete permissions and remove it immediately after the operation. Do not weaken permissions on the source private key.
 
 ## SQLite Execution
 
