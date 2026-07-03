@@ -2,8 +2,8 @@ const TOKEN_URL = "https://api.customer.jp/oauth/v1/accesstokens";
 const INSTANCE_LIST_URL = "https://api.customer.jp/webarenaIndigo/v1/vm/getinstancelist";
 const STATUS_UPDATE_URL = "https://api.customer.jp/webarenaIndigo/v1/vm/instance/statusupdate";
 
-const START_CRON = "0 13 * * FRI";
-const STOP_CRON = "0 9 * * TUE";
+const START_CRON = "0 13 * * 5";
+const STOP_CRON = "0 9 * * 2";
 
 function requireEnv(env, name) {
   const value = env[name];
