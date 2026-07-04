@@ -83,8 +83,25 @@ def cloudflare_pages_deploy(output_dir: Path, cwd: Path) -> None:
 
 
 def default_fetch_days(target_date: dt.date) -> int:
-    # Friday night prepares the next available racing day. Other update slots only inspect the target date.
+    # Explicit Friday runs keep the legacy "next available racing day" behavior.
+    # Normal daytime update slots only inspect the target date.
     return 4 if target_date.weekday() == 4 else 1
+
+
+def is_next_day_prep_slot(now: dt.datetime) -> bool:
+    return now.weekday() in {4, 5} and now.time() >= dt.time(22, 0)
+
+
+def default_target_date(now: dt.datetime) -> dt.date:
+    if is_next_day_prep_slot(now):
+        return now.date() + dt.timedelta(days=1)
+    return now.date()
+
+
+def default_fetch_days_for_run(target_date: dt.date, next_day_prep_slot: bool) -> int:
+    if next_day_prep_slot:
+        return 4
+    return default_fetch_days(target_date)
 
 
 def no_race_marker(repo_dir: Path, target_date: dt.date) -> Path:
@@ -110,7 +127,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sire-data", type=Path, default=Path("/opt/tokyo12r/data/Sire_data.csv"))
     parser.add_argument("--public-output", type=Path, default=Path("/opt/tokyo12r/site-dist/features-jra.json"))
     parser.add_argument("--oci-data", type=Path, default=Path("/opt/tokyo12r/var/oci-data.json"))
-    parser.add_argument("--date", default=dt.datetime.now(JST).date().isoformat())
+    parser.add_argument("--date", help="target date in YYYY-MM-DD. Defaults to current JST date, except Fri/Sat night prep slots use the next day.")
     parser.add_argument("--delay", type=float, default=0.45)
     parser.add_argument("--fetch-days", type=int, help="number of days to scan for official race cards")
     parser.add_argument("--ignore-no-race-marker", action="store_true")
@@ -122,7 +139,10 @@ def main() -> int:
     args = parse_args()
     repo_dir = args.repo_dir.resolve()
     output_dir = args.output.resolve()
-    target_date = dt.date.fromisoformat(args.date)
+    now = dt.datetime.now(JST)
+    next_day_prep_slot = args.date is None and is_next_day_prep_slot(now)
+    target_date = dt.date.fromisoformat(args.date) if args.date else default_target_date(now)
+    date_value = target_date.isoformat()
     marker = no_race_marker(repo_dir, target_date)
 
     if should_use_no_race_marker(target_date) and marker.exists() and not args.ignore_no_race_marker:
@@ -132,7 +152,7 @@ def main() -> int:
     if not args.skip_pull and (repo_dir / ".git").exists():
         run_command(["git", "pull", "--ff-only"], repo_dir)
 
-    fetch_days = args.fetch_days if args.fetch_days is not None else default_fetch_days(target_date)
+    fetch_days = args.fetch_days if args.fetch_days is not None else default_fetch_days_for_run(target_date, next_day_prep_slot)
     run_command(
         [
             "python3",
@@ -140,7 +160,7 @@ def main() -> int:
             "--output",
             str(output_dir),
             "--date",
-            args.date,
+            date_value,
             "--fetch-official",
             "--fetch-days",
             str(fetch_days),
@@ -190,7 +210,7 @@ def main() -> int:
             os.environ.get("GITHUB_REPOSITORY", "Coizumi/tokyo12r"),
             os.environ.get("GITHUB_WORKFLOW", "deploy-tokyo12r.yml"),
             token,
-            args.date,
+            date_value,
         )
     else:
         print("GitHub workflow dispatch is disabled.", flush=True)

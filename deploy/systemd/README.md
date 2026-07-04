@@ -53,8 +53,13 @@ sudo systemctl start tokyo12r-feature-update.service
 Schedule:
 
 - Fri 22:10 JST
-- Sat/Sun 08:33, 12:33, 15:12, 15:57, 17:33 JST
+- Sat 08:33, 12:33, 15:12, 15:57, 17:33, 22:10 JST
+- Sun 08:33, 12:33, 15:12, 15:57, 17:33 JST
 - Mon/Tue 08:33, 12:33, 15:12, 15:57, 17:33 JST
+
+Fri 22:10 and Sat 22:10 prepare the next day's race card. These slots scan up
+to four days from the resolved target date so the next available JRA racing day
+can be generated and deployed.
 
 On Monday and Tuesday, the first no-race check writes
 `/opt/tokyo12r/var/no-race-YYYY-MM-DD.marker` when no JRA races are found.

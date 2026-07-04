@@ -255,6 +255,8 @@ sudo systemctl enable --now tokyo12r-feature-update.timer
 
 systemd serviceは、Ubuntu/AlmaLinux差を避けるため専用ユーザー `tokyo12r` で実行する。
 
+timerは通常更新に加え、金曜22:10と土曜22:10に翌日分の予想を生成・デプロイする。土曜22:10の追加により、日曜開催分を前日夜に公開できる。
+
 動作確認:
 
 ```bash
