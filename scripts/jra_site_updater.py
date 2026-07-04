@@ -32,16 +32,16 @@ BANNER_ASSET_NAME = "tokyo12r-paddock-banner.jpg"
 MARKS = ["◎", "○", "▲", "△", "☆"]
 RECENT_WEIGHTS = [1.0, 0.72, 0.52, 0.36]
 DAM_SIRE_BONUS_WEIGHT = 0.35
-CLASS_WEIGHT_RULES = [
-    ("GI", r"\bG(?:I|1)\b", 1.60),
-    ("GII", r"\bG(?:II|2)\b", 1.50),
-    ("Jpn1", r"\bJPN(?:I|1)\b", 1.45),
-    ("GIII", r"\bG(?:III|3)\b", 1.40),
-    ("OP or Listed", r"\bOP\b|オープン|\bLISTED\b|リステッド|\(L\)", 1.30),
-    ("3勝", r"3勝|1600万", 1.22),
-    ("Jpn2", r"\bJPN(?:II|2)\b", 1.18),
-    ("2勝", r"2勝|1000万", 1.12),
-    ("Jpn3", r"\bJPN(?:III|3)\b", 1.08),
+CLASS_WEIGHT_BONUS_RULES = [
+    ("GI", r"\bG(?:I|1)\b", 0.60),
+    ("GII", r"\bG(?:II|2)\b", 0.50),
+    ("Jpn1", r"\bJPN(?:I|1)\b", 0.45),
+    ("GIII", r"\bG(?:III|3)\b", 0.40),
+    ("OP or Listed", r"\bOP\b|オープン|\bLISTED\b|リステッド|\(L\)", 0.30),
+    ("3勝", r"3勝|1600万", 0.22),
+    ("Jpn2", r"\bJPN(?:II|2)\b", 0.18),
+    ("2勝", r"2勝|1000万", 0.12),
+    ("Jpn3", r"\bJPN(?:III|3)\b", 0.08),
 ]
 GOOGLE_ANALYTICS_SCRIPT = """  <script async src="https://www.googletagmanager.com/gtag/js?id=G-TG6LR51391"></script>
   <script>
@@ -494,20 +494,21 @@ def normalize_race_class_text(text: str) -> str:
     return unicodedata.normalize("NFKC", normalize_text(text)).upper()
 
 
-def race_class_multiplier(text: str) -> float:
+def race_class_bonus(text: str) -> float:
     normalized = normalize_race_class_text(text)
-    for _, pattern, multiplier in CLASS_WEIGHT_RULES:
+    for _, pattern, bonus in CLASS_WEIGHT_BONUS_RULES:
         if re.search(pattern, normalized):
-            return multiplier
-    return 1.0
+            return bonus
+    return 0.0
 
 
 def adjusted_recent_weight(base_weight: float, text: str, place: int | None = None) -> float:
     if place is None:
         place_match = re.search(r"(\d+)\s*着", text)
         place = int(place_match.group(1)) if place_match else None
-    place_multiplier = 0.5 if isinstance(place, int) and place >= 8 else 1.0
-    return round(base_weight * race_class_multiplier(text) * place_multiplier, 6)
+    class_bonus = race_class_bonus(text)
+    class_bonus_multiplier = 0.5 if isinstance(place, int) and place >= 8 else 1.0
+    return round(base_weight + class_bonus * class_bonus_multiplier, 6)
 
 
 def parse_past_performance(text: str) -> dict[str, object]:
@@ -529,7 +530,7 @@ def parse_past_performance(text: str) -> dict[str, object]:
         "distance": int(course_match.group(1)) if course_match else None,
         "seconds": time_value,
         "corners": corners,
-        "weight_multiplier": race_class_multiplier(normalized),
+        "class_bonus": race_class_bonus(normalized),
     }
 
 
