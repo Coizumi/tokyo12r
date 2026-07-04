@@ -9,6 +9,7 @@ import math
 import re
 import shutil
 import time
+import unicodedata
 from dataclasses import dataclass, field
 from functools import lru_cache
 from hashlib import sha256
@@ -29,7 +30,19 @@ SITE_TITLE = "TOKYO12R by ZIN"
 USER_AGENT = "TOKYO12R-by-ZIN/0.1 (+official-source-check)"
 BANNER_ASSET_NAME = "tokyo12r-paddock-banner.jpg"
 MARKS = ["◎", "○", "▲", "△", "☆"]
+RECENT_WEIGHTS = [1.0, 0.72, 0.52, 0.36]
 DAM_SIRE_BONUS_WEIGHT = 0.35
+CLASS_WEIGHT_RULES = [
+    ("GI", r"\bG(?:I|1)\b", 1.60),
+    ("GII", r"\bG(?:II|2)\b", 1.50),
+    ("Jpn1", r"\bJPN(?:I|1)\b", 1.45),
+    ("GIII", r"\bG(?:III|3)\b", 1.40),
+    ("OP or Listed", r"\bOP\b|オープン|\bLISTED\b|リステッド|\(L\)", 1.30),
+    ("3勝", r"3勝|1600万", 1.22),
+    ("Jpn2", r"\bJPN(?:II|2)\b", 1.18),
+    ("2勝", r"2勝|1000万", 1.12),
+    ("Jpn3", r"\bJPN(?:III|3)\b", 1.08),
+]
 GOOGLE_ANALYTICS_SCRIPT = """  <script async src="https://www.googletagmanager.com/gtag/js?id=G-TG6LR51391"></script>
   <script>
     window.dataLayer = window.dataLayer || [];
@@ -477,6 +490,26 @@ def parse_finish_time(value: str) -> float | None:
     return None
 
 
+def normalize_race_class_text(text: str) -> str:
+    return unicodedata.normalize("NFKC", normalize_text(text)).upper()
+
+
+def race_class_multiplier(text: str) -> float:
+    normalized = normalize_race_class_text(text)
+    for _, pattern, multiplier in CLASS_WEIGHT_RULES:
+        if re.search(pattern, normalized):
+            return multiplier
+    return 1.0
+
+
+def adjusted_recent_weight(base_weight: float, text: str, place: int | None = None) -> float:
+    if place is None:
+        place_match = re.search(r"(\d+)\s*着", text)
+        place = int(place_match.group(1)) if place_match else None
+    place_multiplier = 0.5 if isinstance(place, int) and place >= 8 else 1.0
+    return round(base_weight * race_class_multiplier(text) * place_multiplier, 6)
+
+
 def parse_past_performance(text: str) -> dict[str, object]:
     normalized = normalize_text(text)
     place_match = re.search(r"(\d+)\s*着", normalized)
@@ -496,6 +529,7 @@ def parse_past_performance(text: str) -> dict[str, object]:
         "distance": int(course_match.group(1)) if course_match else None,
         "seconds": time_value,
         "corners": corners,
+        "weight_multiplier": race_class_multiplier(normalized),
     }
 
 
@@ -532,7 +566,6 @@ def minmax_index(raw_values: dict[str, float | None], higher_is_better: bool = T
 
 
 def calculate_feature_indices(horses: list[InternalHorse], race: PublicRace) -> None:
-    weights = [1.0, 0.72, 0.52, 0.36]
     time_raw: dict[str, float | None] = {}
     closing_raw: dict[str, float | None] = {}
     pace_raw: dict[str, float | None] = {}
@@ -542,13 +575,14 @@ def calculate_feature_indices(horses: list[InternalHorse], race: PublicRace) -> 
         speed_values: list[tuple[float, float]] = []
         closing_values: list[tuple[float, float]] = []
         pace_values: list[tuple[float, float]] = []
-        for weight, text in zip(weights, horse.past_texts):
+        for base_weight, text in zip(RECENT_WEIGHTS, horse.past_texts):
             parsed = parse_past_performance(text)
             place = parsed["place"]
             field = parsed["field"]
             distance = parsed["distance"]
             seconds = parsed["seconds"]
             corners = parsed["corners"]
+            weight = adjusted_recent_weight(base_weight, text, place if isinstance(place, int) else None)
             if isinstance(distance, int) and isinstance(seconds, float) and seconds > 0:
                 speed_values.append((distance / seconds, weight))
             if isinstance(place, int) and isinstance(field, int) and field > 1:
@@ -635,14 +669,14 @@ def parse_horses(detail_html: str) -> list[InternalHorse]:
 
 def score_horse(horse: InternalHorse) -> float:
     score = math.log10(max(horse.prize_yen, 1)) * 2.1 if horse.prize_yen else 0.0
-    weights = [1.0, 0.72, 0.52, 0.36]
-    for weight, text in zip(weights, horse.past_texts):
+    for base_weight, text in zip(RECENT_WEIGHTS, horse.past_texts):
         place_match = re.search(r"(\d+)\s*着", text)
         field_match = re.search(r"(\d+)\s*頭", text)
         pop_match = re.search(r"(\d+)\s*番人気", text)
         diff_match = re.search(r"\(([-+]?\d+(?:\.\d+)?)\)", text)
+        place = int(place_match.group(1)) if place_match else None
+        weight = adjusted_recent_weight(base_weight, text, place)
         if place_match and field_match:
-            place = int(place_match.group(1))
             field = max(int(field_match.group(1)), 1)
             score += max(0.0, (field + 1 - place) / field) * 8.0 * weight
             if place <= 3:
