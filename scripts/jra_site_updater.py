@@ -43,6 +43,22 @@ CLASS_WEIGHT_BONUS_RULES = [
     ("2勝", r"2勝|1000万", 0.12),
     ("Jpn3", r"\bJPN(?:III|3)\b", 0.08),
 ]
+PAR_SPEED_BY_SURFACE = {
+    "芝": [
+        (1300, 17.35),
+        (1600, 17.05),
+        (2000, 16.75),
+        (2600, 16.35),
+        (9999, 16.15),
+    ],
+    "ダート": [
+        (1300, 16.55),
+        (1600, 16.35),
+        (2000, 16.05),
+        (2600, 15.75),
+        (9999, 15.55),
+    ],
+}
 GOOGLE_ANALYTICS_SCRIPT = """  <script async src="https://www.googletagmanager.com/gtag/js?id=G-TG6LR51391"></script>
   <script>
     window.dataLayer = window.dataLayer || [];
@@ -313,6 +329,8 @@ def parse_course_condition(course: str) -> tuple[str, int | None]:
     surface = "芝" if "芝" in course else ""
     if "ダート" in course or re.search(r"\bダ\b", course):
         surface = "ダート"
+    if "障害" in course:
+        surface = "障害"
     distance_match = re.search(r"([\d,]+)\s*m", course)
     distance = int(distance_match.group(1).replace(",", "")) if distance_match else None
     return surface, distance
@@ -502,6 +520,50 @@ def race_class_bonus(text: str) -> float:
     return 0.0
 
 
+def normalize_surface(value: str) -> str:
+    if value in {"芝", "ダート"}:
+        return value
+    if value == "ダ":
+        return "ダート"
+    return ""
+
+
+def par_speed(surface: str, distance: int) -> float | None:
+    rows = PAR_SPEED_BY_SURFACE.get(surface)
+    if not rows:
+        return None
+    for max_distance, speed in rows:
+        if distance <= max_distance:
+            return speed
+    return rows[-1][1]
+
+
+def time_speed_value(distance: int, seconds: float, surface: str, race_surface: str) -> float:
+    raw_speed = distance / seconds
+    if race_surface == "障害":
+        return raw_speed
+    par = par_speed(surface, distance)
+    if par is None:
+        return raw_speed
+    return raw_speed / par
+
+
+def parse_past_course_values(text: str) -> tuple[int | None, str, float | None]:
+    course_pattern = r"(?:(\d{3,4})(?:m)?\s*(芝ダ|芝|ダート|ダ)|(芝ダ|芝|ダート|ダ)\s*(\d{3,4})(?:m)?)"
+    time_pattern = r"(\d+:\d{2}\.\d|\d{2}\.\d)"
+    course_time_match = re.search(rf"{course_pattern}\s+{time_pattern}", text)
+    course_match = course_time_match or re.search(course_pattern, text)
+    if not course_match:
+        return None, "", parse_finish_time(text)
+
+    distance_text = course_match.group(1) or course_match.group(4)
+    surface_text = course_match.group(2) or course_match.group(3) or ""
+    seconds = parse_finish_time(course_time_match.group(5)) if course_time_match else parse_finish_time(text)
+    if course_time_match and seconds is None:
+        seconds = float(course_time_match.group(5))
+    return int(distance_text) if distance_text else None, normalize_surface(surface_text), seconds
+
+
 def adjusted_recent_weight(base_weight: float, text: str, place: int | None = None) -> float:
     if place is None:
         place_match = re.search(r"(\d+)\s*着", text)
@@ -515,11 +577,7 @@ def parse_past_performance(text: str) -> dict[str, object]:
     normalized = normalize_text(text)
     place_match = re.search(r"(\d+)\s*着", normalized)
     field_match = re.search(r"(\d+)\s*頭", normalized)
-    course_time_match = re.search(r"(\d{3,4})(?:m)?\s*(?:芝ダ|芝|ダート|ダ)\s+(\d+:\d{2}\.\d|\d{2}\.\d)", normalized)
-    course_match = course_time_match or re.search(r"(\d{3,4})(?:m)?\s*(?:芝ダ|芝|ダート|ダ)", normalized)
-    time_value = parse_finish_time(course_time_match.group(2)) if course_time_match else parse_finish_time(normalized)
-    if course_time_match and time_value is None:
-        time_value = float(course_time_match.group(2))
+    distance, surface, time_value = parse_past_course_values(normalized)
     corners: list[int] = []
     kg_match = re.search(r"\d+\s*kg\s+([0-9 ]{1,15})(?:\s|$)", normalized)
     if kg_match:
@@ -527,7 +585,8 @@ def parse_past_performance(text: str) -> dict[str, object]:
     return {
         "place": int(place_match.group(1)) if place_match else None,
         "field": int(field_match.group(1)) if field_match else None,
-        "distance": int(course_match.group(1)) if course_match else None,
+        "distance": distance,
+        "surface": surface,
         "seconds": time_value,
         "corners": corners,
         "class_bonus": race_class_bonus(normalized),
@@ -567,6 +626,7 @@ def minmax_index(raw_values: dict[str, float | None], higher_is_better: bool = T
 
 
 def calculate_feature_indices(horses: list[InternalHorse], race: PublicRace) -> None:
+    race_surface, _ = parse_course_condition(race.course)
     time_raw: dict[str, float | None] = {}
     closing_raw: dict[str, float | None] = {}
     pace_raw: dict[str, float | None] = {}
@@ -581,11 +641,12 @@ def calculate_feature_indices(horses: list[InternalHorse], race: PublicRace) -> 
             place = parsed["place"]
             field = parsed["field"]
             distance = parsed["distance"]
+            surface = parsed["surface"]
             seconds = parsed["seconds"]
             corners = parsed["corners"]
             weight = adjusted_recent_weight(base_weight, text, place if isinstance(place, int) else None)
             if isinstance(distance, int) and isinstance(seconds, float) and seconds > 0:
-                speed_values.append((distance / seconds, weight))
+                speed_values.append((time_speed_value(distance, seconds, str(surface), race_surface), weight))
             if isinstance(place, int) and isinstance(field, int) and field > 1:
                 finish_quality = (field + 1 - place) / field
                 gain = 0.0
