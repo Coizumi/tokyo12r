@@ -33,6 +33,28 @@ Set `CLOUDFLARE_PAGES_DEPLOY=1`, `CLOUDFLARE_API_TOKEN`,
 `CLOUDFLARE_PAGES_BRANCH=main` so the VPS batch deploys `site-dist` directly
 to Cloudflare Pages after a successful run.
 
+Cloudflare R2 archive is controlled by the same env file. Set
+`TOKYO12R_R2_ARCHIVE=1` to upload the generated public JSON to R2 on each run.
+The upload overwrites the same daily key, so only the final JSON for each date
+is retained.
+
+Optional R2 bucket override:
+
+```bash
+TOKYO12R_R2_BUCKET=byzin-nar-results
+```
+
+Archive keys:
+
+```text
+jra/daily/YYYY/MM/DD/public-dataYYYYMMDD.json
+jra/latest/public-data.json
+```
+
+R2 upload failures are retried and then logged as non-blocking warnings. A
+temporary R2 failure should not prevent the Cloudflare Pages deployment from
+continuing.
+
 GitHub Actions dispatch remains available as a backup path. Set
 `TOKYO12R_DISPATCH_WORKFLOW=1` and `GITHUB_TOKEN` only when the VPS batch
 should also trigger the Cloudflare Pages deploy workflow.
@@ -69,4 +91,5 @@ pipeline unless `--ignore-no-race-marker` is supplied.
 The service runs `scripts/jra_oci_batch.py`, which fetches official JRA race
 cards, generates `site-dist`, writes private runner data to
 `/opt/tokyo12r/var/oci-data.json`, ingests it into SQLite, and exports
-`site-dist/features-jra.json`.
+`site-dist/features-jra.json`. When `TOKYO12R_R2_ARCHIVE=1`, it also archives
+the public `site-dist/public-dataYYYYMMDD.json` to Cloudflare R2.

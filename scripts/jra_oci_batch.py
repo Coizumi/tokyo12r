@@ -6,6 +6,7 @@ import datetime as dt
 import json
 import os
 import subprocess
+import time
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -63,6 +64,10 @@ def should_deploy(value: str | None) -> bool:
     return (value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def should_archive(value: str | None) -> bool:
+    return (value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def cloudflare_pages_deploy(output_dir: Path, cwd: Path) -> None:
     token = os.environ.get("CLOUDFLARE_API_TOKEN", "").strip()
     if not token:
@@ -80,6 +85,56 @@ def cloudflare_pages_deploy(output_dir: Path, cwd: Path) -> None:
         f"--branch={branch}",
     ]
     run_command(command, cwd)
+
+
+def archive_public_data_to_r2(public_data: Path, cwd: Path) -> None:
+    token = os.environ.get("CLOUDFLARE_API_TOKEN", "").strip()
+    account_id = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "").strip()
+    if not token:
+        raise RuntimeError("TOKYO12R_R2_ARCHIVE is enabled but CLOUDFLARE_API_TOKEN is empty.")
+    if not account_id:
+        raise RuntimeError("TOKYO12R_R2_ARCHIVE is enabled but CLOUDFLARE_ACCOUNT_ID is empty.")
+
+    bucket = (
+        os.environ.get("TOKYO12R_R2_BUCKET")
+        or os.environ.get("R2_BUCKET")
+        or os.environ.get("CLOUDFLARE_R2_BUCKET")
+        or "byzin-nar-results"
+    ).strip()
+    filename = public_data.name
+    if not filename.startswith("public-data") or not filename.endswith(".json"):
+        raise ValueError(f"Unexpected public data filename for R2 archive: {filename}")
+    date_key = filename.removeprefix("public-data").removesuffix(".json")
+    if len(date_key) != 8 or not date_key.isdigit():
+        raise ValueError(f"Unexpected public data date key for R2 archive: {filename}")
+
+    year, month, day = date_key[:4], date_key[4:6], date_key[6:8]
+    daily_key = f"{bucket}/jra/daily/{year}/{month}/{day}/public-data{date_key}.json"
+    latest_key = f"{bucket}/jra/latest/public-data.json"
+    for object_path in (daily_key, latest_key):
+        command = [
+            "npx",
+            "--yes",
+            "wrangler@latest",
+            "r2",
+            "object",
+            "put",
+            object_path,
+            "--remote",
+            "--file",
+            str(public_data),
+            "--content-type",
+            "application/json; charset=utf-8",
+        ]
+        for attempt in range(1, 4):
+            try:
+                run_command(command, cwd)
+                break
+            except subprocess.CalledProcessError:
+                if attempt >= 3:
+                    raise
+                print(f"R2 archive upload failed for {object_path}; retrying ({attempt}/3).", flush=True)
+                time.sleep(5)
 
 
 def default_fetch_days(target_date: dt.date) -> int:
@@ -171,8 +226,9 @@ def main() -> int:
         ],
         repo_dir,
     )
-    public_data = args.oci_data if args.oci_data.exists() else latest_public_data(output_dir)
-    race_count = public_race_count(public_data)
+    generated_public_data = latest_public_data(output_dir)
+    public_data_for_features = args.oci_data if args.oci_data.exists() else generated_public_data
+    race_count = public_race_count(public_data_for_features)
     if should_use_no_race_marker(target_date) and race_count == 0:
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text(f"{dt.datetime.now(JST).isoformat()} no races for {target_date}\n", encoding="utf-8")
@@ -180,7 +236,7 @@ def main() -> int:
         return 0
     if marker.exists() and race_count > 0:
         marker.unlink()
-    print(f"Using OCI data: {public_data}", flush=True)
+    print(f"Using OCI data: {public_data_for_features}", flush=True)
     run_command(
         [
             "python3",
@@ -192,10 +248,18 @@ def main() -> int:
             "--public-output",
             str(args.public_output),
             "--public-data",
-            str(public_data),
+            str(public_data_for_features),
         ],
         repo_dir,
     )
+
+    if should_archive(os.environ.get("TOKYO12R_R2_ARCHIVE")):
+        try:
+            archive_public_data_to_r2(generated_public_data, repo_dir)
+        except Exception as exc:
+            print(f"R2 public data archive failed; continuing deploy: {exc}", flush=True)
+    else:
+        print("R2 public data archive is disabled.", flush=True)
 
     if should_deploy(os.environ.get("CLOUDFLARE_PAGES_DEPLOY")):
         cloudflare_pages_deploy(output_dir, repo_dir)

@@ -27,6 +27,7 @@ jobs:
     env:
       SITE_OUTPUT: site-dist
       TZ: Asia/Tokyo
+      R2_BUCKET: byzin-nar-results
 
     steps:
       - name: Checkout
@@ -47,6 +48,41 @@ jobs:
             args+=(--date "${{ inputs.date }}")
           fi
           python scripts/jra_site_updater.py "${args[@]}"
+
+      - name: Resolve generated date key
+        id: datekey
+        shell: bash
+        run: |
+          set -euo pipefail
+          data_file="$(ls "$SITE_OUTPUT"/public-data*.json | sort | tail -n 1)"
+          filename="$(basename "$data_file")"
+          date_key="${filename#public-data}"
+          date_key="${date_key%.json}"
+          echo "date_key=$date_key" >> "$GITHUB_OUTPUT"
+          echo "data_file=$data_file" >> "$GITHUB_OUTPUT"
+
+      - name: Upload public JSON to Cloudflare R2
+        if: ${{ vars.ENABLE_R2_ARCHIVE == 'true' }}
+        continue-on-error: true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          DATE_KEY: ${{ steps.datekey.outputs.date_key }}
+          DATA_FILE: ${{ steps.datekey.outputs.data_file }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          year="${DATE_KEY:0:4}"
+          month="${DATE_KEY:4:2}"
+          day="${DATE_KEY:6:2}"
+          npx --yes wrangler@latest r2 object put "${R2_BUCKET}/jra/daily/${year}/${month}/${day}/public-data${DATE_KEY}.json" \
+            --remote \
+            --file "$DATA_FILE" \
+            --content-type "application/json; charset=utf-8"
+          npx --yes wrangler@latest r2 object put "${R2_BUCKET}/jra/latest/public-data.json" \
+            --remote \
+            --file "$DATA_FILE" \
+            --content-type "application/json; charset=utf-8"
 
       - name: Ensure Cloudflare Pages project
         env:

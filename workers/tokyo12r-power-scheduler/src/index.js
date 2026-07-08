@@ -2,8 +2,10 @@ const TOKEN_URL = "https://api.customer.jp/oauth/v1/accesstokens";
 const INSTANCE_LIST_URL = "https://api.customer.jp/webarenaIndigo/v1/vm/getinstancelist";
 const STATUS_UPDATE_URL = "https://api.customer.jp/webarenaIndigo/v1/vm/instance/statusupdate";
 
-const START_CRON = "0 13 * * 5";
-const STOP_CRON = "0 9 * * 2";
+const START_CRON = "0 13 * * FRI";
+const STOP_CRON = "0 9 * * TUE";
+const START_DAYS = new Set(["FRI", "6"]);
+const STOP_DAYS = new Set(["TUE", "3"]);
 
 function requireEnv(env, name) {
   const value = env[name];
@@ -14,8 +16,13 @@ function requireEnv(env, name) {
 }
 
 function actionForCron(cron) {
-  if (cron === START_CRON) return "start";
-  if (cron === STOP_CRON) return "stop";
+  const normalized = String(cron || "").trim().toUpperCase().replace(/\s+/g, " ");
+  if (normalized === START_CRON) return "start";
+  if (normalized === STOP_CRON) return "stop";
+
+  const [minute, hour, , , dayOfWeek] = normalized.split(" ");
+  if (minute === "0" && hour === "13" && START_DAYS.has(dayOfWeek)) return "start";
+  if (minute === "0" && hour === "9" && STOP_DAYS.has(dayOfWeek)) return "stop";
   throw new Error(`Unsupported cron: ${cron}`);
 }
 
@@ -43,6 +50,16 @@ function safeApiPayload(payload) {
     if (payload[key] !== undefined) safe[key] = payload[key];
   }
   return safe;
+}
+
+function logPowerResult(result) {
+  console.log(`power action completed: ${JSON.stringify(result)}`);
+  return result;
+}
+
+function logPowerError(error, cron) {
+  console.error(`power action failed: ${JSON.stringify({ cron, message: error?.message || String(error) })}`);
+  throw error;
 }
 
 async function createAccessToken(env) {
@@ -161,7 +178,12 @@ async function runPowerAction(env, action, cron = "manual") {
 
 export default {
   async scheduled(controller, env, ctx) {
-    ctx.waitUntil(runPowerAction(env, actionForCron(controller.cron), controller.cron));
+    const cron = controller.cron;
+    ctx.waitUntil(
+      runPowerAction(env, actionForCron(cron), cron)
+        .then(logPowerResult)
+        .catch((error) => logPowerError(error, cron)),
+    );
   },
 
   async fetch(request, env) {
