@@ -508,6 +508,25 @@ def parse_finish_time(value: str) -> float | None:
     return None
 
 
+def parse_closing_3f(value: str) -> float | None:
+    normalized = unicodedata.normalize("NFKC", normalize_text(value))
+    match = re.search(r"(?:3F|上がり3F|上り3F|上がり|上り)\s*([2-5]\d\.\d)", normalized)
+    return float(match.group(1)) if match else None
+
+
+def closing_3f_score(closing_3f: float, place: int | None, field: int | None, corners: list[int]) -> float:
+    score = -closing_3f
+    if isinstance(place, int):
+        if place >= 6:
+            score -= min(1.2, (place - 5) * 0.18)
+        elif place <= 3:
+            score += (4 - place) * 0.06
+    if isinstance(place, int) and isinstance(field, int) and field > 1 and corners:
+        gain = max(0.0, (corners[-1] - place) / field)
+        score += min(0.35, gain * 0.45)
+    return score
+
+
 def normalize_race_class_text(text: str) -> str:
     return unicodedata.normalize("NFKC", normalize_text(text)).upper()
 
@@ -578,6 +597,7 @@ def parse_past_performance(text: str) -> dict[str, object]:
     place_match = re.search(r"(\d+)\s*着", normalized)
     field_match = re.search(r"(\d+)\s*頭", normalized)
     distance, surface, time_value = parse_past_course_values(normalized)
+    closing_3f = parse_closing_3f(normalized)
     corners: list[int] = []
     kg_match = re.search(r"\d+\s*kg\s+([0-9 ]{1,15})(?:\s|$)", normalized)
     if kg_match:
@@ -588,6 +608,7 @@ def parse_past_performance(text: str) -> dict[str, object]:
         "distance": distance,
         "surface": surface,
         "seconds": time_value,
+        "closing_3f": closing_3f,
         "corners": corners,
         "class_bonus": race_class_bonus(normalized),
     }
@@ -629,12 +650,15 @@ def calculate_feature_indices(horses: list[InternalHorse], race: PublicRace) -> 
     race_surface, _ = parse_course_condition(race.course)
     time_raw: dict[str, float | None] = {}
     closing_raw: dict[str, float | None] = {}
+    closing_3f_raw: dict[str, float | None] = {}
+    closing_fallback_raw: dict[str, float | None] = {}
     pace_raw: dict[str, float | None] = {}
     overall_raw: dict[str, float] = {}
     for horse in horses:
         key = horse.number
         speed_values: list[tuple[float, float]] = []
-        closing_values: list[tuple[float, float]] = []
+        closing_3f_values: list[tuple[float, float]] = []
+        closing_fallback_values: list[tuple[float, float]] = []
         pace_values: list[tuple[float, float]] = []
         for base_weight, text in zip(RECENT_WEIGHTS, horse.past_texts):
             parsed = parse_past_performance(text)
@@ -643,23 +667,42 @@ def calculate_feature_indices(horses: list[InternalHorse], race: PublicRace) -> 
             distance = parsed["distance"]
             surface = parsed["surface"]
             seconds = parsed["seconds"]
+            closing_3f = parsed["closing_3f"]
             corners = parsed["corners"]
             weight = adjusted_recent_weight(base_weight, text, place if isinstance(place, int) else None)
             if isinstance(distance, int) and isinstance(seconds, float) and seconds > 0:
                 speed_values.append((time_speed_value(distance, seconds, str(surface), race_surface), weight))
+            if isinstance(closing_3f, float) and closing_3f > 0:
+                closing_3f_values.append(
+                    (
+                        closing_3f_score(
+                            closing_3f,
+                            place if isinstance(place, int) else None,
+                            field if isinstance(field, int) else None,
+                            corners if isinstance(corners, list) else [],
+                        ),
+                        weight,
+                    )
+                )
             if isinstance(place, int) and isinstance(field, int) and field > 1:
                 finish_quality = (field + 1 - place) / field
                 gain = 0.0
                 if isinstance(corners, list) and corners:
                     gain = max(0.0, (corners[-1] - place) / field)
                     pace_values.append((1.0 - (max(corners[0], 1) - 1) / (field - 1), weight))
-                closing_values.append((finish_quality * 0.65 + gain * 0.35, weight))
+                closing_fallback_values.append((finish_quality * 0.65 + gain * 0.35, weight))
         time_raw[key] = weighted_mean(speed_values)
-        closing_raw[key] = weighted_mean(closing_values)
+        closing_3f_raw[key] = weighted_mean(closing_3f_values)
+        closing_fallback_raw[key] = weighted_mean(closing_fallback_values)
         pace_raw[key] = weighted_mean(pace_values)
         overall_raw[key] = score_horse(horse)
         horse.score = overall_raw[key]
         horse.sire_fit_score = sire_fit_score(horse.sire_name, race.course, horse.dam_sire_name)
+
+    if any(value is not None for value in closing_3f_raw.values()):
+        closing_raw = closing_3f_raw
+    else:
+        closing_raw = closing_fallback_raw
 
     time_indices = minmax_index(time_raw)
     closing_indices = minmax_index(closing_raw)
