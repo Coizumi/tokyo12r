@@ -40,17 +40,14 @@ OCI無料利用枠は、A1 Flexの容量不足とE2.1.Microの実運用余力不
 ## インフラ構成
 
 TOKYO12Rは、公開配信をCloudflare Pagesへ寄せ、データ収集と公開用データ生成をWebARENA Indigo VPSに集約する。
-VPSの電源制御はCloudflare Workers CronからWebARENA Indigo APIを呼び出して行う。
+WebARENA Indigo VPSの電源は自動制御しない。停止または起動が必要な場合は、WebARENA Indigoの管理画面から手動で操作する。
 
 ```mermaid
 flowchart LR
   user["利用者"] --> pages["Cloudflare Pages<br/>tokyo12r.byzin.win"]
   pages --> html["静的HTML<br/>index.html / resultYYYYMMDD.html"]
 
-  cfcron["Cloudflare Workers Cron<br/>tokyo12r-power-scheduler"] -->|金曜22:00 JST 起動| webapi["WebARENA Indigo API"]
-  cfcron -->|火曜18:00 JST 停止| webapi
-  webapi --> vps["WebARENA Indigo VPS<br/>tokyo12r-batch-01"]
-
+  vps["WebARENA Indigo VPS<br/>tokyo12r-batch-01"]
   vps --> systemd["systemd timer<br/>tokyo12r-feature-update.timer"]
   systemd --> batch["JRA特徴量バッチ<br/>scripts/jra_oci_batch.py"]
   batch --> jra["JRA公式データ"]
@@ -67,11 +64,10 @@ flowchart LR
 インフラ上の責務:
 
 - Cloudflare Pages: 公開サイト配信のみを担当する
-- Cloudflare Workers Cron: WebARENA VPSの起動/停止のみを担当する
 - WebARENA Indigo VPS: JRAデータ収集、SQLite蓄積、公開用予想/結果データ生成、Cloudflare Pages本番デプロイを担当する
 - Cloudflare R2: `site-dist/public-dataYYYYMMDD.json` の日次最終版を保存する。履歴DBではなく、公開JSONのアーカイブ用途に限定する
 - GitHub Actions: 手動再生成、緊急時、検証用のバックアップデプロイを担当する
-- GitHub repository: コード、仕様、Worker定義、systemd unitを管理する
+- GitHub repository: コード、仕様、systemd unitを管理する
 
 ## サイト構成
 
@@ -286,35 +282,9 @@ VPSのtimezoneを `Asia/Tokyo` に設定する。
 
 更新のたびに全開催場の人気順を取得し、公開データを更新する。
 
-### Cloudflare Workers CronによるVPS電源制御
+### VPS電源管理
 
-WebARENA Indigo VPSは火曜18:00 JSTから金曜22:00 JSTまで停止期間とする。
-
-- 起動トリガー: 金曜 22:00 JST
-- 停止トリガー: 火曜 18:00 JST
-- 実装: Cloudflare Workers Cron
-- Worker名: `tokyo12r-power-scheduler`
-- Cron式はCloudflareの仕様に合わせてUTCで定義する
-  - 金曜22:00 JST: `0 13 * * FRI`
-  - 火曜18:00 JST: `0 9 * * TUE`
-
-WorkerはWebARENA APIでアクセストークンを取得し、対象インスタンスID `788730` に対して `start` / `stop` を実行する。
-API Key、API SecretはWorker Secretとして保存し、リポジトリにコミットしない。
-手動HTTP実行を有効化する場合のみ `ADMIN_TOKEN` もWorker Secretとして保存する。
-
-### WebARENA API利用時の注意
-
-WebARENA Indigo APIのインスタンス停止起動では次の点に注意する。
-
-- API Key単体をBearer Tokenとして使う構成ではない。API Keyを `clientId`、API Secretを `clientSecret` としてアクセストークンを発行してから利用する。
-- アクセストークン発行は `POST https://api.customer.jp/oauth/v1/accesstokens` を利用する。
-- インスタンス一覧は `GET https://api.customer.jp/webarenaIndigo/v1/vm/getinstancelist` を利用する。
-- 停止起動は `POST https://api.customer.jp/webarenaIndigo/v1/vm/instance/statusupdate` を利用する。
-- `statusupdate` は公式例に合わせ、`Content-Type: application/json` を明示しない。明示するとバリデーションエラーになる場合がある。
-- APIにはレート制限がある。実測では短時間連続呼び出しでHTTP 429が返るため、Worker内ではAPI呼び出し間に待機を入れる。
-- 停止要求は `success=false` でも `sucessCode=I10025` の場合、停止処理受付として扱う。
-- APIレスポンスには `successCode` ではなく `sucessCode` と返る場合があるため、実装では両方を考慮する。
-- Cloudflare Cronの曜日指定は、数値ではなく3文字の曜日名で管理する。Cloudflareの数値曜日は `1=Sunday` から `7=Saturday` であり、一般的なcron実装とずれるため数値指定を避ける。
+WebARENA Indigo VPSの自動停止・自動起動は行わない。通常は稼働状態を維持し、保守などで電源操作が必要な場合に限り、WebARENA Indigoの管理画面から手動で停止または起動する。
 
 ## データ保存
 
