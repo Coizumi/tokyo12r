@@ -13,7 +13,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from functools import lru_cache
 from hashlib import sha256
-from itertools import combinations, product
+from itertools import product
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urljoin, urlparse
@@ -870,10 +870,7 @@ def format_formula(marks: list[str], lookup: dict[str, PublicPick]) -> str:
     return " / ".join(f"{mark} {lookup[mark].name}" for mark in marks if mark in lookup)
 
 
-def bet_sections(picks: list[PublicPick]) -> list[dict[str, object]]:
-    lookup = pick_lookup(picks)
-    if len(lookup) < 5:
-        return []
+def bet_definitions() -> list[dict[str, object]]:
     umaren = []
     for left in ["◎", "○"]:
         for right in ["○", "▲", "△", "☆"]:
@@ -881,7 +878,13 @@ def bet_sections(picks: list[PublicPick]) -> list[dict[str, object]]:
                 pair = tuple(sorted((left, right), key=MARKS.index))
                 if pair not in umaren:
                     umaren.append(pair)
-    trio_box = list(combinations(MARKS, 3))
+    trio = []
+    for combo in product(["◎", "○"], ["◎", "○", "▲"], MARKS):
+        if len(set(combo)) != 3:
+            continue
+        ticket = tuple(sorted(combo, key=MARKS.index))
+        if ticket not in trio:
+            trio.append(ticket)
     trifecta = [
         combo
         for combo in product(["◎", "○"], ["◎", "○", "▲"], MARKS)
@@ -889,9 +892,16 @@ def bet_sections(picks: list[PublicPick]) -> list[dict[str, object]]:
     ]
     return [
         {"label": "馬連フォーメーション", "formula": "◎○ - ○▲△☆", "count": len(umaren), "tickets": umaren},
-        {"label": "3連複BOX", "formula": "◎○▲△☆", "count": len(trio_box), "tickets": trio_box},
+        {"label": "3連複フォーメーション", "formula": "◎○ - ◎○▲ - ◎○▲△☆", "count": len(trio), "tickets": trio},
         {"label": "3連単フォーメーション", "formula": "◎○ - ◎○▲ - ◎○▲△☆", "count": len(trifecta), "tickets": trifecta},
     ]
+
+
+def bet_sections(picks: list[PublicPick]) -> list[dict[str, object]]:
+    lookup = pick_lookup(picks)
+    if len(lookup) < 5:
+        return []
+    return bet_definitions()
 
 
 def normalize_numbers(value: str) -> tuple[str, ...]:
@@ -1177,9 +1187,8 @@ def render_result_button(date_key: str, race: PublicRace) -> str:
 
 def render_common_bets() -> str:
     rows = [
-        ("馬連フォーメーション", "◎○ - ○▲△☆", "7点"),
-        ("3連複BOX", "◎○▲△☆", "10点"),
-        ("3連単フォーメーション", "◎○ - ◎○▲ - ◎○▲△☆", "12点"),
+        (str(section["label"]), str(section["formula"]), f'{int(section["count"])}点')
+        for section in bet_definitions()
     ]
     items = "".join(
         f'<li><strong>{html.escape(label)}</strong><span>{html.escape(formula)}</span><em>{html.escape(count)}</em></li>'
