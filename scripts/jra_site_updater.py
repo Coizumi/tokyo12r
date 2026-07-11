@@ -88,6 +88,7 @@ class InternalHorse:
     pace_index: float = 50.0
     sire_fit_score: float = 50.0
     overall_index: float = 50.0
+    class_rank_bonus: float = 0.0
 
 
 @dataclass
@@ -539,6 +540,25 @@ def race_class_bonus(text: str) -> float:
     return 0.0
 
 
+def distance_adjustment_factor(past_distance: int, race_distance: int | None) -> float:
+    if race_distance is None:
+        return 1.0
+    delta = race_distance - past_distance
+    if delta >= 700:
+        return 0.955
+    if delta >= 500:
+        return 0.970
+    if delta >= 300:
+        return 0.985
+    if delta <= -700:
+        return 1.020
+    if delta <= -500:
+        return 1.015
+    if delta <= -300:
+        return 1.008
+    return 1.0
+
+
 def normalize_surface(value: str) -> str:
     if value in {"芝", "ダート"}:
         return value
@@ -557,14 +577,16 @@ def par_speed(surface: str, distance: int) -> float | None:
     return rows[-1][1]
 
 
-def time_speed_value(distance: int, seconds: float, surface: str, race_surface: str) -> float:
+def time_speed_value(distance: int, seconds: float, surface: str, race_surface: str, race_distance: int | None = None) -> float:
     raw_speed = distance / seconds
     if race_surface == "障害":
         return raw_speed
     par = par_speed(surface, distance)
     if par is None:
-        return raw_speed
-    return raw_speed / par
+        speed_value = raw_speed
+    else:
+        speed_value = raw_speed / par
+    return speed_value * distance_adjustment_factor(distance, race_distance)
 
 
 def parse_past_course_values(text: str) -> tuple[int | None, str, float | None]:
@@ -584,12 +606,20 @@ def parse_past_course_values(text: str) -> tuple[int | None, str, float | None]:
 
 
 def adjusted_recent_weight(base_weight: float, text: str, place: int | None = None) -> float:
-    if place is None:
-        place_match = re.search(r"(\d+)\s*着", text)
-        place = int(place_match.group(1)) if place_match else None
-    class_bonus = race_class_bonus(text)
-    class_bonus_multiplier = 0.5 if isinstance(place, int) and place >= 8 else 1.0
-    return round(base_weight + class_bonus * class_bonus_multiplier, 6)
+    return round(base_weight, 6)
+
+
+def best_recent_class_score(horse: InternalHorse) -> float:
+    return max((race_class_bonus(text) for text in horse.past_texts), default=0.0)
+
+
+def apply_class_rank_bonuses(horses: list[InternalHorse]) -> None:
+    scores = {horse.number: best_recent_class_score(horse) for horse in horses}
+    ranked_scores = sorted({score for score in scores.values() if score > 0.0}, reverse=True)
+    bonus_by_rank = [6.0, 4.0, 2.0]
+    bonus_by_score = {score: bonus_by_rank[index] for index, score in enumerate(ranked_scores[: len(bonus_by_rank)])}
+    for horse in horses:
+        horse.class_rank_bonus = bonus_by_score.get(scores[horse.number], 0.0)
 
 
 def parse_past_performance(text: str) -> dict[str, object]:
@@ -647,7 +677,7 @@ def minmax_index(raw_values: dict[str, float | None], higher_is_better: bool = T
 
 
 def calculate_feature_indices(horses: list[InternalHorse], race: PublicRace) -> None:
-    race_surface, _ = parse_course_condition(race.course)
+    race_surface, race_distance = parse_course_condition(race.course)
     time_raw: dict[str, float | None] = {}
     closing_raw: dict[str, float | None] = {}
     closing_3f_raw: dict[str, float | None] = {}
@@ -671,7 +701,7 @@ def calculate_feature_indices(horses: list[InternalHorse], race: PublicRace) -> 
             corners = parsed["corners"]
             weight = adjusted_recent_weight(base_weight, text, place if isinstance(place, int) else None)
             if isinstance(distance, int) and isinstance(seconds, float) and seconds > 0:
-                speed_values.append((time_speed_value(distance, seconds, str(surface), race_surface), weight))
+                speed_values.append((time_speed_value(distance, seconds, str(surface), race_surface, race_distance), weight))
             if isinstance(closing_3f, float) and closing_3f > 0:
                 closing_3f_values.append(
                     (
@@ -698,6 +728,7 @@ def calculate_feature_indices(horses: list[InternalHorse], race: PublicRace) -> 
         overall_raw[key] = score_horse(horse)
         horse.score = overall_raw[key]
         horse.sire_fit_score = sire_fit_score(horse.sire_name, race.course, horse.dam_sire_name)
+    apply_class_rank_bonuses(horses)
 
     if any(value is not None for value in closing_3f_raw.values()):
         closing_raw = closing_3f_raw
@@ -815,16 +846,23 @@ def make_feature_picks(horses: list[InternalHorse], race: PublicRace, popularity
     calculate_feature_indices(horses, race)
     time_closing_rank = sorted(
         horses,
-        key=lambda item: (-(item.time_index + item.closing_index), horse_number(item), item.name),
+        key=lambda item: (-(item.time_index + item.closing_index + item.class_rank_bonus * 0.25), horse_number(item), item.name),
     )
     time_pace_rank = sorted(
         horses,
-        key=lambda item: (-(item.time_index + item.pace_index), horse_number(item), item.name),
+        key=lambda item: (-(item.time_index + item.pace_index + item.class_rank_bonus * 0.20), horse_number(item), item.name),
     )
     overall_rank = sorted(
         horses,
         key=lambda item: (
-            -(item.overall_index + item.time_index * 0.10 + item.closing_index * 0.08 + item.pace_index * 0.06 + item.sire_fit_score * 0.08),
+            -(
+                item.overall_index
+                + item.time_index * 0.10
+                + item.closing_index * 0.08
+                + item.pace_index * 0.06
+                + item.sire_fit_score * 0.08
+                + item.class_rank_bonus
+            ),
             horse_number(item),
             item.name,
         ),
@@ -859,7 +897,10 @@ def make_picks(horses: list[InternalHorse], popularity_status: str = "中間", r
         horse.score = score_horse(horse)
         if race is not None:
             horse.sire_fit_score = sire_fit_score(horse.sire_name, race.course, horse.dam_sire_name)
-            horse.score = round(horse.score + horse.sire_fit_score * 0.08, 3)
+    apply_class_rank_bonuses(horses)
+    for horse in horses:
+        if race is not None:
+            horse.score = round(horse.score + horse.sire_fit_score * 0.08 + horse.class_rank_bonus, 3)
     ranked = sorted(horses, key=lambda item: (-item.score, horse_number(item), item.name))[:5]
     picks: list[PublicPick] = []
     for mark, horse in zip(MARKS, ranked):
