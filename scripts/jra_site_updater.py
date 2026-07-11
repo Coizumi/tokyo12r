@@ -30,7 +30,7 @@ SITE_TITLE = "TOKYO12R by ZIN"
 USER_AGENT = "TOKYO12R-by-ZIN/0.1 (+official-source-check)"
 BANNER_ASSET_NAME = "tokyo12r-paddock-banner.jpg"
 MARKS = ["◎", "○", "▲", "△", "☆"]
-RECENT_WEIGHTS = [1.0, 0.72, 0.52, 0.36]
+RECENT_WEIGHTS = [1.0, 0.95, 0.90, 0.85]
 DAM_SIRE_BONUS_WEIGHT = 0.35
 CLASS_WEIGHT_BONUS_RULES = [
     ("GI", r"\bG(?:I|1)\b", 0.60),
