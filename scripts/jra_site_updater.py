@@ -540,6 +540,19 @@ def race_class_bonus(text: str) -> float:
     return 0.0
 
 
+def parse_finish_place(text: str) -> int | None:
+    place_match = re.search(r"(\d+)\s*着", normalize_text(text))
+    return int(place_match.group(1)) if place_match else None
+
+
+def adjusted_race_class_score(text: str) -> float:
+    bonus = race_class_bonus(text)
+    place = parse_finish_place(text)
+    if place is not None and place >= 6:
+        return bonus * 0.5
+    return bonus
+
+
 def distance_adjustment_factor(past_distance: int, race_distance: int | None) -> float:
     if race_distance is None:
         return 1.0
@@ -610,7 +623,7 @@ def adjusted_recent_weight(base_weight: float, text: str, place: int | None = No
 
 
 def best_recent_class_score(horse: InternalHorse) -> float:
-    return max((race_class_bonus(text) for text in horse.past_texts), default=0.0)
+    return max((adjusted_race_class_score(text) for text in horse.past_texts), default=0.0)
 
 
 def apply_class_rank_bonuses(horses: list[InternalHorse]) -> None:
@@ -624,7 +637,7 @@ def apply_class_rank_bonuses(horses: list[InternalHorse]) -> None:
 
 def parse_past_performance(text: str) -> dict[str, object]:
     normalized = normalize_text(text)
-    place_match = re.search(r"(\d+)\s*着", normalized)
+    place = parse_finish_place(normalized)
     field_match = re.search(r"(\d+)\s*頭", normalized)
     distance, surface, time_value = parse_past_course_values(normalized)
     closing_3f = parse_closing_3f(normalized)
@@ -633,14 +646,14 @@ def parse_past_performance(text: str) -> dict[str, object]:
     if kg_match:
         corners = [int(value) for value in re.findall(r"\d+", kg_match.group(1))]
     return {
-        "place": int(place_match.group(1)) if place_match else None,
+        "place": place,
         "field": int(field_match.group(1)) if field_match else None,
         "distance": distance,
         "surface": surface,
         "seconds": time_value,
         "closing_3f": closing_3f,
         "corners": corners,
-        "class_bonus": race_class_bonus(normalized),
+        "class_bonus": adjusted_race_class_score(normalized),
     }
 
 

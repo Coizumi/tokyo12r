@@ -12,6 +12,7 @@ sys.modules.setdefault("bs4", bs4_stub)
 
 from jra_site_updater import (
     InternalHorse,
+    adjusted_race_class_score,
     adjusted_recent_weight,
     apply_class_rank_bonuses,
     bet_definitions,
@@ -79,6 +80,11 @@ class JraDistanceAndClassTests(unittest.TestCase):
     def test_recent_weight_no_longer_adds_absolute_class_bonus(self):
         self.assertEqual(adjusted_recent_weight(1.0, "GI 1着"), 1.0)
 
+    def test_class_score_is_halved_for_sixth_or_worse(self):
+        self.assertEqual(adjusted_race_class_score("GI 5着"), 0.60)
+        self.assertEqual(adjusted_race_class_score("GI 6着"), 0.30)
+        self.assertEqual(adjusted_race_class_score("GI 9着"), 0.30)
+
     def test_class_rank_bonus_uses_race_relative_best_class(self):
         horses = [
             InternalHorse(number="1", name="A", past_texts=["GI 9着"]),
@@ -89,7 +95,7 @@ class JraDistanceAndClassTests(unittest.TestCase):
 
         apply_class_rank_bonuses(horses)
 
-        self.assertEqual([horse.class_rank_bonus for horse in horses], [6.0, 2.0, 4.0, 0.0])
+        self.assertEqual([horse.class_rank_bonus for horse in horses], [4.0, 4.0, 6.0, 0.0])
 
 
 if __name__ == "__main__":
