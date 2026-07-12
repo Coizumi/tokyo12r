@@ -72,6 +72,18 @@ Run once manually:
 sudo systemctl start tokyo12r-feature-update.service
 ```
 
+From the Windows workstation, the same VPS-side update can be triggered with
+the manual deploy helper:
+
+```cmd
+deploy\jra_deploy.cmd
+```
+
+The helper creates a temporary ACL-restricted SSH key copy, runs `git pull
+--ff-only` on `/opt/tokyo12r`, starts `tokyo12r-feature-update.service`, checks
+the service result, verifies the public page, and then removes the temporary
+key. Secrets remain outside the repository.
+
 Schedule:
 
 - Fri 22:10 JST

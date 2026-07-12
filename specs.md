@@ -395,6 +395,8 @@ yearly  = YYYY
 
 systemd timerで `scripts/jra_oci_batch.py` 相当のバッチを実行する。既存コード名にOCIが残る場合も、実行先はWebARENA Indigo VPSとする。後続でファイル名を `jra_vps_batch.py` へ変更できる状態にしておく。
 
+手動デプロイ補助として `deploy/jra_deploy.py` と `deploy/jra_deploy.cmd` を用意する。WindowsからWebARENA VPSへSSH接続し、VPS側リポジトリの `git pull --ff-only`、`tokyo12r-feature-update.service` の起動、Cloudflare Pages直接デプロイ後の公開ページ確認を実行する。SSH秘密鍵は一時コピーを作成して使い、スクリプト内には秘密情報を持たせない。
+
 ## 失敗時の扱い
 
 - データ取得失敗: リトライ後、前回特徴量を残す
