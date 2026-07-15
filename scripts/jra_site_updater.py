@@ -959,6 +959,21 @@ def fetch_next_available_races(start_date: dt.date, delay_seconds: float = 0.45,
     return start_date, last_races
 
 
+def freeze_started_predictions(
+    races: list[PublicRace],
+    previous_races: list[PublicRace],
+    target_date: dt.date,
+    now: dt.datetime | None = None,
+) -> None:
+    current = now or dt.datetime.now(JST)
+    previous_by_key = {(race.venue, race.race_no): race for race in previous_races}
+    for race in races:
+        start_at = parse_start_datetime(target_date, race.start_time)
+        previous = previous_by_key.get((race.venue, race.race_no))
+        if start_at is not None and current >= start_at and previous is not None and previous.picks:
+            race.picks = previous.picks
+
+
 def pick_lookup(picks: list[PublicPick]) -> dict[str, PublicPick]:
     return {pick.mark: pick for pick in picks}
 
@@ -1691,13 +1706,17 @@ def main() -> int:
     args = parser.parse_args()
 
     target_date = dt.date.fromisoformat(args.date)
+    output = Path(args.output)
     generated_at = dt.datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S JST")
     if args.fetch_official:
         target_date, races = fetch_next_available_races(target_date, args.delay, max(1, args.fetch_days))
+        previous_path = output / f"public-data{target_date.strftime('%Y%m%d')}.json"
+        previous_races, _ = load_public_payload(previous_path if previous_path.exists() else None, target_date)
+        freeze_started_predictions(races, previous_races, target_date)
     else:
         races, loaded_generated_at = load_public_payload(args.input, target_date)
         generated_at = loaded_generated_at or generated_at
-    generate(Path(args.output), target_date, races, generated_at, args.oci_data_output)
+    generate(output, target_date, races, generated_at, args.oci_data_output)
     print(f"Generated {len(races)} races into {args.output}")
     return 0
 

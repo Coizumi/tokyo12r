@@ -1,3 +1,4 @@
+import datetime as dt
 import unittest
 from pathlib import Path
 import sys
@@ -12,15 +13,69 @@ sys.modules.setdefault("bs4", bs4_stub)
 
 from jra_site_updater import (
     InternalHorse,
+    JST,
+    PublicPick,
+    PublicRace,
     adjusted_race_class_score,
     adjusted_recent_weight,
     apply_class_rank_bonuses,
     bet_definitions,
     closing_3f_score,
     distance_adjustment_factor,
+    freeze_started_predictions,
     is_winning_ticket,
     parse_closing_3f,
 )
+
+
+class JraPredictionFreezeTests(unittest.TestCase):
+    @staticmethod
+    def race(start_time: str, horse_number: str) -> PublicRace:
+        return PublicRace(
+            venue="東京",
+            race_no=1,
+            start_time=start_time,
+            title="テスト競走",
+            course="芝1600m",
+            official_url="https://example.test/race",
+            picks=[
+                PublicPick(
+                    mark="◎",
+                    name=f"馬{horse_number}",
+                    popularity_rank=1,
+                    popularity_status="中間",
+                    score=80.0,
+                    note="",
+                    horse_number=horse_number,
+                )
+            ],
+        )
+
+    def test_last_published_picks_are_kept_at_start_time(self):
+        previous = self.race("12時00分", "1")
+        refreshed = self.race("12時00分", "9")
+
+        freeze_started_predictions(
+            [refreshed],
+            [previous],
+            dt.date(2026, 7, 15),
+            dt.datetime(2026, 7, 15, 12, 0, tzinfo=JST),
+        )
+
+        self.assertEqual(refreshed.picks[0].horse_number, "1")
+
+    def test_picks_can_still_update_before_start_time(self):
+        previous = self.race("12時00分", "1")
+        refreshed = self.race("12時00分", "9")
+
+        freeze_started_predictions(
+            [refreshed],
+            [previous],
+            dt.date(2026, 7, 15),
+            dt.datetime(2026, 7, 15, 11, 59, tzinfo=JST),
+        )
+
+        self.assertEqual(refreshed.picks[0].horse_number, "9")
 
 
 class JraBetDefinitionTests(unittest.TestCase):
