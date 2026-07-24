@@ -991,7 +991,7 @@ def bet_definitions() -> list[dict[str, object]]:
                 if pair not in umaren:
                     umaren.append(pair)
     trio = []
-    for combo in product(["◎", "○"], ["◎", "○", "▲"], MARKS):
+    for combo in product(["◎", "○"], ["◎", "○", "▲"], ["▲", "△", "☆"]):
         if len(set(combo)) != 3:
             continue
         ticket = tuple(sorted(combo, key=MARKS.index))
@@ -1004,7 +1004,7 @@ def bet_definitions() -> list[dict[str, object]]:
     ]
     return [
         {"label": "馬連フォーメーション", "formula": "◎○ - ○▲△☆", "count": len(umaren), "tickets": umaren},
-        {"label": "3連複フォーメーション", "formula": "◎○ - ◎○▲ - ◎○▲△☆", "count": len(trio), "tickets": trio},
+        {"label": "3連複フォーメーション", "formula": "◎○ - ◎○▲ - ▲△☆", "count": len(trio), "tickets": trio},
         {"label": "3連単フォーメーション", "formula": "◎○ - ◎○▲ - ◎○▲△☆", "count": len(trifecta), "tickets": trifecta},
     ]
 

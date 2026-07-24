@@ -82,7 +82,7 @@ class JraBetDefinitionTests(unittest.TestCase):
     def test_trio_formation_is_seven_unique_unordered_tickets(self):
         trio = next(section for section in bet_definitions() if section["label"] == "3連複フォーメーション")
 
-        self.assertEqual(trio["formula"], "◎○ - ◎○▲ - ◎○▲△☆")
+        self.assertEqual(trio["formula"], "◎○ - ◎○▲ - ▲△☆")
         self.assertEqual(trio["count"], 7)
         self.assertEqual(
             trio["tickets"],
