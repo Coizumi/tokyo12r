@@ -87,9 +87,9 @@ key. Secrets remain outside the repository.
 Schedule:
 
 - Fri 22:10 JST
-- Sat 08:33, 12:33, 15:12, 15:57, 17:33, 22:10 JST
-- Sun 08:33, 12:33, 15:12, 15:57, 17:33 JST
-- Mon/Tue 08:33, 12:33, 15:12, 15:57, 17:33 JST
+- Sat 08:45, then every 30 minutes at HH:15 and HH:45 through 20:45, plus 22:10 JST
+- Sun 08:45, then every 30 minutes at HH:15 and HH:45 through 20:45 JST
+- Mon/Tue 08:45, then every 30 minutes at HH:15 and HH:45 through 20:45 JST
 
 Fri 22:10 and Sat 22:10 prepare the next day's race card. These slots scan up
 to four days from the resolved target date so the next available JRA racing day
@@ -99,6 +99,12 @@ On Monday and Tuesday, the first no-race check writes
 `/opt/tokyo12r/var/no-race-YYYY-MM-DD.marker` when no JRA races are found.
 Subsequent slots for the same day exit successfully without doing the full
 pipeline unless `--ignore-no-race-marker` is supplied.
+
+The default official JRA request delay is 1.2 seconds. When the existing
+`public-dataYYYYMMDD.json` already has confirmed results for every race and no
+generation input file is newer than that public data file, later slots exit
+successfully before official fetch, SQLite import, R2 archive, and Cloudflare
+Pages deploy. Use `--ignore-complete-results` for a forced rerun.
 
 The service runs `scripts/jra_oci_batch.py`, which fetches official JRA race
 cards, generates `site-dist`, writes private runner data to

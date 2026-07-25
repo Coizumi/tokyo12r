@@ -922,7 +922,7 @@ def make_picks(horses: list[InternalHorse], popularity_status: str = "中間", r
     return picks
 
 
-def fetch_official_races(target_date: dt.date, delay_seconds: float = 0.45) -> list[PublicRace]:
+def fetch_official_races(target_date: dt.date, delay_seconds: float = 1.2) -> list[PublicRace]:
     meetings = fetch_meetings(target_date)
     races: list[PublicRace] = []
     for venue, meeting_cname in meetings:
@@ -948,7 +948,7 @@ def fetch_official_races(target_date: dt.date, delay_seconds: float = 0.45) -> l
     return races
 
 
-def fetch_next_available_races(start_date: dt.date, delay_seconds: float = 0.45, days: int = 4) -> tuple[dt.date, list[PublicRace]]:
+def fetch_next_available_races(start_date: dt.date, delay_seconds: float = 1.2, days: int = 4) -> tuple[dt.date, list[PublicRace]]:
     last_races: list[PublicRace] = []
     for offset in range(days):
         candidate = start_date + dt.timedelta(days=offset)
@@ -1702,7 +1702,7 @@ def main() -> int:
     parser.add_argument("--oci-data-output", type=Path, help="private OCI JSON output with runners and bloodline fields")
     parser.add_argument("--fetch-official", action="store_true", help="fetch current JRA official race card HTML")
     parser.add_argument("--fetch-days", type=int, default=4, help="number of days to scan when --fetch-official is used")
-    parser.add_argument("--delay", type=float, default=0.45, help="seconds between official JRA requests")
+    parser.add_argument("--delay", type=float, default=1.2, help="seconds between official JRA requests")
     args = parser.parse_args()
 
     target_date = dt.date.fromisoformat(args.date)

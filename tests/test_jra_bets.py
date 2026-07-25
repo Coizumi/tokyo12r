@@ -1,4 +1,7 @@
 import datetime as dt
+import json
+import os
+import tempfile
 import unittest
 from pathlib import Path
 import sys
@@ -26,6 +29,7 @@ from jra_site_updater import (
     is_winning_ticket,
     parse_closing_3f,
 )
+from jra_oci_batch import all_race_results_confirmed, generation_inputs_newer_than
 
 
 class JraPredictionFreezeTests(unittest.TestCase):
@@ -76,6 +80,58 @@ class JraPredictionFreezeTests(unittest.TestCase):
         )
 
         self.assertEqual(refreshed.picks[0].horse_number, "9")
+
+
+class JraBatchSkipTests(unittest.TestCase):
+    def test_all_race_results_confirmed_requires_every_race_confirmed(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            public_data = Path(temp_dir) / "public-data20260725.json"
+            public_data.write_text(
+                json.dumps(
+                    {
+                        "races": [
+                            {"result_status": "確定", "result_rows": [{"rank": "1"}]},
+                            {"result_status": "未確定", "result_rows": []},
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            self.assertFalse(all_race_results_confirmed(public_data))
+
+            public_data.write_text(
+                json.dumps(
+                    {
+                        "races": [
+                            {"result_status": "確定", "result_rows": [{"rank": "1"}]},
+                            {"result_status": "確定", "result_rows": [{"rank": "1"}]},
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            self.assertTrue(all_race_results_confirmed(public_data))
+
+    def test_generation_inputs_newer_than_detects_script_changes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            generated = root / "site-dist" / "public-data20260725.json"
+            source = root / "scripts" / "jra_site_updater.py"
+            generated.parent.mkdir()
+            source.parent.mkdir()
+            generated.write_text("{}", encoding="utf-8")
+            source.write_text("print('old')\n", encoding="utf-8")
+            old_time = 1_700_000_000
+            new_time = old_time + 100
+            os.utime(source, (old_time, old_time))
+            os.utime(generated, (new_time, new_time))
+
+            self.assertFalse(generation_inputs_newer_than(root, generated))
+
+            os.utime(source, (new_time + 100, new_time + 100))
+            self.assertTrue(generation_inputs_newer_than(root, generated))
 
 
 class JraBetDefinitionTests(unittest.TestCase):

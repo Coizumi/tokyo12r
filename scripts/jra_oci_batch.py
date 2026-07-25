@@ -174,6 +174,49 @@ def public_race_count(public_data: Path) -> int:
     return len(payload.get("races", []))
 
 
+def public_data_path(output_dir: Path, target_date: dt.date) -> Path:
+    return output_dir / f"public-data{target_date.strftime('%Y%m%d')}.json"
+
+
+def all_race_results_confirmed(public_data: Path) -> bool:
+    if not public_data.exists():
+        return False
+    try:
+        payload = json.loads(public_data.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    races = payload.get("races", [])
+    if not races:
+        return False
+    return all(
+        str(race.get("result_status", "")) == "確定" and bool(race.get("result_rows"))
+        for race in races
+    )
+
+
+def generation_inputs_newer_than(repo_dir: Path, generated_file: Path) -> bool:
+    if not generated_file.exists():
+        return True
+    generated_mtime = generated_file.stat().st_mtime
+    watched_roots = [
+        repo_dir / "scripts",
+        repo_dir / "data",
+        repo_dir / "assets",
+        repo_dir / "site",
+        repo_dir / "deploy" / "systemd",
+    ]
+    watched_suffixes = {".py", ".csv", ".html", ".css", ".js", ".json", ".jpg", ".jpeg", ".png", ".svg", ".service", ".timer"}
+    for root in watched_roots:
+        if not root.exists():
+            continue
+        for path in root.rglob("*"):
+            if not path.is_file() or path.suffix.lower() not in watched_suffixes:
+                continue
+            if path.stat().st_mtime > generated_mtime:
+                return True
+    return False
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the TOKYO12R OCI-side JRA batch.")
     parser.add_argument("--repo-dir", type=Path, default=Path("/opt/tokyo12r"))
@@ -183,9 +226,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--public-output", type=Path, default=Path("/opt/tokyo12r/site-dist/features-jra.json"))
     parser.add_argument("--oci-data", type=Path, default=Path("/opt/tokyo12r/var/oci-data.json"))
     parser.add_argument("--date", help="target date in YYYY-MM-DD. Defaults to current JST date, except Fri/Sat night prep slots use the next day.")
-    parser.add_argument("--delay", type=float, default=0.45)
+    parser.add_argument("--delay", type=float, default=1.2)
     parser.add_argument("--fetch-days", type=int, help="number of days to scan for official race cards")
     parser.add_argument("--ignore-no-race-marker", action="store_true")
+    parser.add_argument("--ignore-complete-results", action="store_true")
     parser.add_argument("--skip-pull", action="store_true")
     return parser.parse_args()
 
@@ -206,6 +250,15 @@ def main() -> int:
 
     if not args.skip_pull and (repo_dir / ".git").exists():
         run_command(["git", "pull", "--ff-only"], repo_dir)
+
+    target_public_data = public_data_path(output_dir, target_date)
+    if (
+        not args.ignore_complete_results
+        and all_race_results_confirmed(target_public_data)
+        and not generation_inputs_newer_than(repo_dir, target_public_data)
+    ):
+        print(f"All race results are already confirmed for {target_date}; skipping update.", flush=True)
+        return 0
 
     fetch_days = args.fetch_days if args.fetch_days is not None else default_fetch_days_for_run(target_date, next_day_prep_slot)
     run_command(
