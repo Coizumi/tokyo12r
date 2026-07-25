@@ -1126,6 +1126,7 @@ def public_payload(date: dt.date, generated_at: str, races: list[PublicRace]) ->
                         "mark": pick.mark,
                         "name": pick.name,
                         "horse_number": pick.horse_number,
+                        "score": pick.score,
                         "popularity_rank": pick.popularity_rank,
                         "popularity_status": pick.popularity_status,
                     }
@@ -1184,6 +1185,7 @@ def oci_payload(date: dt.date, generated_at: str, races: list[PublicRace]) -> di
                         "mark": pick.mark,
                         "name": pick.name,
                         "horse_number": pick.horse_number,
+                        "score": pick.score,
                         "popularity_rank": pick.popularity_rank,
                         "popularity_status": pick.popularity_status,
                         "sire_name": pick.sire_name,
@@ -1213,7 +1215,7 @@ def load_public_payload(input_path: Path | None, target_date: dt.date) -> tuple[
                 name=str(pick.get("name", "")),
                 popularity_rank=int(pick["popularity_rank"]) if pick.get("popularity_rank") else None,
                 popularity_status=str(pick.get("popularity_status", odds_status)),
-                score=0.0,
+                score=float(pick.get("score") or 0.0),
                 note="",
                 horse_number=str(pick.get("horse_number", "")),
             )
@@ -1272,6 +1274,7 @@ def render_picks(race: PublicRace) -> str:
         popularity = ""
         if pick.popularity_rank:
             popularity = f'<span class="popularity">{pick.popularity_rank} 人気（{html.escape(pick.popularity_status)}）</span>'
+        score = f'<span class="pick-score" title="総合力指数">{pick.score:04.1f}</span>'
         horse_no = (
             f'<span class="pick-horse-no">{html.escape(pick.horse_number)}</span>'
             if pick.horse_number
@@ -1282,7 +1285,7 @@ def render_picks(race: PublicRace) -> str:
             <li>
               <span class="mark">{html.escape(pick.mark)}</span>
               {horse_no}
-              <span class="pick-line"><b>{html.escape(pick.name)}</b>{popularity}</span>
+              <span class="pick-line"><b>{html.escape(pick.name)}</b>{score}{popularity}</span>
             </li>
             """
         )
@@ -1575,10 +1578,11 @@ main { width:min(1180px, calc(100vw - 24px)); margin:16px auto 40px; }
 .race-head time { color:var(--deep); font-weight:800; white-space:nowrap; }
 .picks { display:grid; gap:6px; margin:12px 0 0; padding:0; list-style:none; }
 .picks li { display:grid; grid-template-columns:30px 28px minmax(0,1fr); gap:7px; align-items:center; padding:7px; border:1px solid #d6eadc; border-radius:7px; background:#f8fcf9; }
-.pick-line { min-width:0; display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:start; gap:8px; }
+.pick-line { min-width:0; display:grid; grid-template-columns:minmax(0,1fr) auto auto; align-items:start; gap:6px; }
 .picks b { min-width:0; overflow:visible; text-overflow:clip; white-space:normal; overflow-wrap:anywhere; line-height:1.35; }
 .pick-horse-no { display:grid; place-items:center; width:26px; height:26px; border-radius:5px; background:#fff; border:1px solid #cce8d5; color:var(--deep); font-weight:900; font-size:13px; }
 .pick-horse-no.is-empty { visibility:hidden; }
+.pick-score { border:1px solid #d9c58b; border-radius:999px; padding:3px 6px; background:#fff8df; color:#6b5000; font-size:11px; font-weight:900; white-space:nowrap; font-variant-numeric:tabular-nums; }
 .popularity { flex:0 0 auto; border:1px solid #cce8d5; border-radius:999px; padding:3px 6px; background:white; color:var(--deep); font-size:11px; font-weight:800; white-space:nowrap; }
 .mark { display:grid; place-items:center; width:28px; height:28px; border-radius:50%; background:var(--green); color:white; font-weight:900; }
 .race-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:10px; }

@@ -27,7 +27,10 @@ from jra_site_updater import (
     distance_adjustment_factor,
     freeze_started_predictions,
     is_winning_ticket,
+    load_public_payload,
     parse_closing_3f,
+    public_payload,
+    render_picks,
 )
 from jra_oci_batch import all_race_results_confirmed, generation_inputs_newer_than
 
@@ -80,6 +83,43 @@ class JraPredictionFreezeTests(unittest.TestCase):
         )
 
         self.assertEqual(refreshed.picks[0].horse_number, "9")
+
+    def test_render_picks_shows_score_between_name_and_popularity(self):
+        race = PublicRace(
+            venue="Tokyo",
+            race_no=1,
+            start_time="12:00",
+            title="Test race",
+            course="Turf 1600m",
+            official_url="https://example.test/race",
+            picks=[
+                PublicPick(
+                    mark="A",
+                    name="Horse1",
+                    popularity_rank=1,
+                    popularity_status="mid",
+                    score=80.0,
+                    note="",
+                    horse_number="1",
+                )
+            ],
+        )
+
+        html = render_picks(race)
+
+        self.assertIn('class="pick-score"', html)
+        self.assertIn(">80.0</span>", html)
+        self.assertLess(html.index("Horse1"), html.index(">80.0</span>"))
+
+    def test_public_payload_preserves_pick_score(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "public-data20260715.json"
+            payload = public_payload(dt.date(2026, 7, 15), "2026-07-15 12:00:00 JST", [self.race("12:00", "1")])
+            path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+            races, _ = load_public_payload(path, dt.date(2026, 7, 15))
+
+        self.assertEqual(races[0].picks[0].score, 80.0)
 
 
 class JraBatchSkipTests(unittest.TestCase):
