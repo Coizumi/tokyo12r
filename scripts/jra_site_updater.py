@@ -111,6 +111,7 @@ class PublicRunner:
     popularity_rank: int | None
     sire_name: str
     dam_sire_name: str
+    score: float = 0.0
 
 
 @dataclass
@@ -932,6 +933,7 @@ def fetch_official_races(target_date: dt.date, delay_seconds: float = 1.2) -> li
             race.odds_status = odds_status_for_race(target_date, race.start_time)
             time.sleep(delay_seconds)
             horses = fetch_horses_with_retry(race)
+            race.picks = make_picks(horses, race.odds_status, race)
             race.runners = [
                 PublicRunner(
                     number=horse.number,
@@ -939,10 +941,10 @@ def fetch_official_races(target_date: dt.date, delay_seconds: float = 1.2) -> li
                     popularity_rank=horse.popularity_rank,
                     sire_name=horse.sire_name,
                     dam_sire_name=horse.dam_sire_name,
+                    score=horse.score,
                 )
                 for horse in horses
             ]
-            race.picks = make_picks(horses, race.odds_status, race)
             enrich_result(race, target_date)
         races.extend(venue_races)
     return races
@@ -1121,6 +1123,17 @@ def public_payload(date: dt.date, generated_at: str, races: list[PublicRace]) ->
                     }
                     for payout in race.payouts
                 ],
+                "runners": [
+                    {
+                        "number": runner.number,
+                        "name": runner.name,
+                        "popularity_rank": runner.popularity_rank,
+                        "score": runner.score,
+                        "sire_name": runner.sire_name,
+                        "dam_sire_name": runner.dam_sire_name,
+                    }
+                    for runner in race.runners
+                ],
                 "picks": [
                     {
                         "mark": pick.mark,
@@ -1175,6 +1188,7 @@ def oci_payload(date: dt.date, generated_at: str, races: list[PublicRace]) -> di
                         "number": runner.number,
                         "name": runner.name,
                         "popularity_rank": runner.popularity_rank,
+                        "score": runner.score,
                         "sire_name": runner.sire_name,
                         "dam_sire_name": runner.dam_sire_name,
                     }
@@ -1237,6 +1251,17 @@ def load_public_payload(input_path: Path | None, target_date: dt.date) -> tuple[
             )
             for payout in item.get("payouts", [])
         ]
+        runners = [
+            PublicRunner(
+                number=str(runner.get("number", "")),
+                name=str(runner.get("name", "")),
+                popularity_rank=int(runner["popularity_rank"]) if runner.get("popularity_rank") else None,
+                sire_name=str(runner.get("sire_name", "")),
+                dam_sire_name=str(runner.get("dam_sire_name", "")),
+                score=float(runner.get("score") or 0.0),
+            )
+            for runner in item.get("runners", [])
+        ]
         races.append(
             PublicRace(
                 venue=str(item.get("venue", "")),
@@ -1248,6 +1273,7 @@ def load_public_payload(input_path: Path | None, target_date: dt.date) -> tuple[
                 result_url=str(item.get("result_url", "")),
                 odds_status=odds_status,
                 picks=picks,
+                runners=runners,
                 result_status=str(item.get("result_status", "未確定")),
                 result_rows=result_rows,
                 payouts=payouts,
@@ -1296,6 +1322,7 @@ def render_result_button(date_key: str, race: PublicRace) -> str:
     return (
         f'<div class="race-actions">'
         f'<a class="source-link result-link" href="/result{html.escape(date_key)}.html#{html.escape(race_anchor_id(race))}">レース結果</a>'
+        f'<a class="source-link score-link" href="/scores{html.escape(date_key)}.html#{html.escape(race_anchor_id(race))}">全頭指数</a>'
         f"</div>"
     )
 
@@ -1524,6 +1551,101 @@ def render_results(date_label: str, date_key: str, races: list[PublicRace], gene
 """
 
 
+def render_score_rows(race: PublicRace) -> str:
+    if not race.runners:
+        return '<div class="score-empty">全頭指数は準備中です。</div>'
+    rows = []
+    ranked = sorted(race.runners, key=lambda item: (-item.score, horse_number(item), item.name))
+    for rank, runner in enumerate(ranked, 1):
+        popularity = f"{runner.popularity_rank} 人気" if runner.popularity_rank else "-"
+        rows.append(
+            f"""
+            <tr>
+              <td>{rank}</td>
+              <td>{html.escape(runner.number)}</td>
+              <td>{html.escape(runner.name)}</td>
+              <td><span class="score-value">{runner.score:04.1f}</span></td>
+              <td>{html.escape(popularity)}</td>
+            </tr>
+            """
+        )
+    return (
+        '<div class="score-table-wrap"><table class="score-table">'
+        "<thead><tr><th>順位</th><th>馬番</th><th>馬名</th><th>総合力指数</th><th>人気</th></tr></thead>"
+        f'<tbody>{"".join(rows)}</tbody></table></div>'
+    )
+
+
+def render_scores(date_label: str, date_key: str, races: list[PublicRace], generated_at: str) -> str:
+    if not races:
+        body = '<section class="empty">全頭指数は準備中です。</section>'
+    else:
+        sections = []
+        venues = list(dict.fromkeys(race.venue for race in races if race.venue))
+        for venue in venues:
+            cards = []
+            for race in sorted([item for item in races if item.venue == venue], key=lambda item: item.race_no):
+                cards.append(
+                    f"""
+                    <article class="race-card score-race-card" id="{html.escape(race_anchor_id(race))}">
+                      <div class="race-head">
+                        <span class="race-no">{race.race_no}R</span>
+                        <div>
+                          <h3>{html.escape(race.title)}</h3>
+                          <p>{html.escape(race.course)}</p>
+                        </div>
+                        <time>{html.escape(race.start_time)}</time>
+                      </div>
+                      {render_score_rows(race)}
+                    </article>
+                    """
+                )
+            sections.append(
+                f"""
+                <section class="result-venue score-venue">
+                  <header><h2>{html.escape(venue)}</h2><span>{len(cards)} races</span></header>
+                  <div class="result-race-list">{"".join(cards)}</div>
+                </section>
+                """
+            )
+        body = f'<div class="result-board score-board">{"".join(sections)}</div>'
+    return f"""<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>全頭指数 {date_key} | {SITE_TITLE}</title>
+  <meta name="description" content="TOKYO12Rの開催場ごと、レースごとの全頭総合力指数一覧です。">
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/site.css">
+{GOOGLE_ANALYTICS_SCRIPT}
+{ADSENSE_SCRIPT}
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="https://tokyo12r.byzin.win/">TOKYO12R</a>
+    {site_nav(date_key)}
+  </header>
+  <main>
+    <section class="summary">
+      <div>
+        <span class="date">全頭指数 {html.escape(date_label)}</span>
+        <p>開催場ごと、レースごとに全出走馬の総合力指数を一覧表示しています。</p>
+      </div>
+      <div class="badge">更新 {html.escape(generated_at)}</div>
+    </section>
+    {body}
+  </main>
+  <footer>
+    馬券は20歳になってから。<br>
+    <a href="https://www.jra.go.jp/">JRA公式サイト</a>
+    <span>正確な情報は公式情報を参照ください。</span>
+  </footer>
+</body>
+</html>
+"""
+
+
 def write_assets(output: Path) -> None:
     assets = output / "assets"
     assets.mkdir(parents=True, exist_ok=True)
@@ -1588,12 +1710,21 @@ main { width:min(1180px, calc(100vw - 24px)); margin:16px auto 40px; }
 .race-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:10px; }
 .source-link { display:inline-block; text-decoration:none; border:1px solid #d8a325; border-radius:6px; padding:7px 10px; background:#fff1bd; color:#7a5600; font-size:13px; font-weight:800; }
 .result-link.disabled { border-color:#d6dbe1; background:#eef1f4; color:#8d96a1; cursor:not-allowed; pointer-events:none; }
+.score-link { border-color:#bfd8ed; background:#eef7ff; color:#0b527c; }
 .result-board { display:grid; grid-template-columns:1fr; gap:14px; margin-top:14px; }
 .result-venue { background:var(--panel); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
 .result-venue > header { display:flex; justify-content:space-between; align-items:center; padding:12px 14px; border-bottom:1px solid var(--line); background:#f9fcfa; }
 .result-venue h2 { margin:0; font-size:18px; }
 .result-venue header span { color:var(--muted); font-size:13px; }
 .result-race-list { display:grid; grid-template-columns:1fr; gap:1px; background:var(--line); }
+.score-race-card { scroll-margin-top:96px; }
+.score-table-wrap { margin-top:12px; overflow-x:auto; border:1px solid #d6eadc; border-radius:7px; background:white; }
+.score-table { width:100%; border-collapse:collapse; min-width:520px; font-size:13px; }
+.score-table th, .score-table td { padding:8px 9px; border-bottom:1px solid #e4eee8; text-align:left; vertical-align:middle; }
+.score-table th { background:#f8fcf9; color:var(--muted); font-size:12px; font-weight:800; white-space:nowrap; }
+.score-table td:nth-child(1), .score-table td:nth-child(2), .score-table td:nth-child(4), .score-table td:nth-child(5) { white-space:nowrap; }
+.score-value { display:inline-grid; place-items:center; min-width:44px; border:1px solid #d9c58b; border-radius:999px; padding:3px 7px; background:#fff8df; color:#6b5000; font-size:12px; font-weight:900; font-variant-numeric:tabular-nums; }
+.score-empty { margin-top:12px; border:1px solid #d6dbe1; border-radius:7px; padding:10px; background:#f4f6f8; color:var(--muted); font-size:13px; font-weight:800; }
 .race-status { display:inline-flex; width:max-content; margin-top:10px; border:1px solid #cce8d5; border-radius:999px; padding:3px 8px; background:#f8fcf9; color:var(--deep); font-size:12px; font-weight:800; }
 .result-list { display:grid; gap:6px; margin:12px 0 0; padding:0; list-style:none; }
 .result-list li { display:grid; grid-template-columns:42px 28px minmax(0, 1fr); gap:8px; align-items:center; padding:8px; border:1px solid #d6eadc; border-radius:7px; background:#f8fcf9; }
@@ -1673,6 +1804,7 @@ def generate(
     payload = public_payload(target_date, generated_at, races)
     (output / "index.html").write_text(render_index(date_label, date_key, races, generated_at), encoding="utf-8")
     (output / f"result{date_key}.html").write_text(render_results(date_label, date_key, races, generated_at), encoding="utf-8")
+    (output / f"scores{date_key}.html").write_text(render_scores(date_label, date_key, races, generated_at), encoding="utf-8")
     (output / f"public-data{date_key}.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     if oci_data_output is not None:
         oci_data_output.parent.mkdir(parents=True, exist_ok=True)
@@ -1690,6 +1822,10 @@ def generate(
   </url>
   <url>
     <loc>https://tokyo12r.byzin.win/result{date_key}.html</loc>
+    <lastmod>{target_date.isoformat()}</lastmod>
+  </url>
+  <url>
+    <loc>https://tokyo12r.byzin.win/scores{date_key}.html</loc>
     <lastmod>{target_date.isoformat()}</lastmod>
   </url>
 </urlset>

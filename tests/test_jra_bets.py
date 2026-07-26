@@ -19,6 +19,7 @@ from jra_site_updater import (
     JST,
     PublicPick,
     PublicRace,
+    PublicRunner,
     adjusted_race_class_score,
     adjusted_recent_weight,
     apply_class_rank_bonuses,
@@ -31,6 +32,8 @@ from jra_site_updater import (
     parse_closing_3f,
     public_payload,
     render_picks,
+    render_result_button,
+    render_scores,
 )
 from jra_oci_batch import all_race_results_confirmed, generation_inputs_newer_than
 
@@ -114,12 +117,45 @@ class JraPredictionFreezeTests(unittest.TestCase):
     def test_public_payload_preserves_pick_score(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "public-data20260715.json"
-            payload = public_payload(dt.date(2026, 7, 15), "2026-07-15 12:00:00 JST", [self.race("12:00", "1")])
+            race = self.race("12:00", "1")
+            race.runners = [
+                PublicRunner(
+                    number="1",
+                    name="Horse1",
+                    popularity_rank=2,
+                    sire_name="",
+                    dam_sire_name="",
+                    score=72.4,
+                )
+            ]
+            payload = public_payload(dt.date(2026, 7, 15), "2026-07-15 12:00:00 JST", [race])
             path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
             races, _ = load_public_payload(path, dt.date(2026, 7, 15))
 
         self.assertEqual(races[0].picks[0].score, 80.0)
+        self.assertEqual(races[0].runners[0].score, 72.4)
+
+    def test_race_actions_include_score_link(self):
+        html = render_result_button("20260715", self.race("12:00", "1"))
+
+        self.assertIn("/result20260715.html#race-", html)
+        self.assertIn("/scores20260715.html#race-", html)
+        self.assertLess(html.index("レース結果"), html.index("全頭指数"))
+
+    def test_render_scores_lists_all_runners_by_score(self):
+        race = self.race("12:00", "1")
+        race.runners = [
+            PublicRunner("8", "Lower", 3, "", "", 31.2),
+            PublicRunner("2", "Upper", 1, "", "", 88.8),
+        ]
+
+        html = render_scores("2026/07/15", "20260715", [race], "2026-07-15 12:00:00 JST")
+
+        self.assertIn("全頭指数", html)
+        self.assertIn('class="score-table"', html)
+        self.assertIn(">88.8</span>", html)
+        self.assertLess(html.index("Upper"), html.index("Lower"))
 
 
 class JraBatchSkipTests(unittest.TestCase):
