@@ -351,10 +351,22 @@ overall_rank_score =
 ☆: sire_fit_score が最も高い馬
 ```
 
+中山、福島、小倉、札幌、函館のダートコースでは、コース特性として先行力を強めに評価する。
+該当レースでは以下のランキングで印を決定する。
+
+```text
+◎: time_index + pace_index + class_rank_bonus * 0.20 が最も高い馬
+○: time_index + pace_index + class_rank_bonus * 0.20 が次点の馬
+▲: time_index + closing_index + class_rank_bonus * 0.25 が最も高い馬
+△: overall_rank_score が最も高い馬
+☆: sire_fit_score が最も高い馬
+```
+
 同じ馬が複数の印候補になる場合は、その印のランキング内で次に高い未選出馬を繰り上げる。候補が尽きた場合は総合力ランキングから未選出馬を補充する。
 
 ただし、`overall_rank_score` が2位に8.0以上の差をつけて最上位の馬がいる場合は、通常の◎候補より優先してその馬を◎にする。
 この場合の△は、`overall_rank_score` の次点馬にする。○、▲、☆は通常どおり各ランキングから未選出馬を選ぶ。
+この優先ルールは、先行力を強めに評価するダートコース専用パターンよりも先に適用する。
 
 同点時の並びは以下の順で安定させる。
 

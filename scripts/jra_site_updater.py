@@ -32,6 +32,7 @@ BANNER_ASSET_NAME = "tokyo12r-paddock-banner.jpg"
 MARKS = ["◎", "○", "▲", "△", "☆"]
 RECENT_WEIGHTS = [1.0, 0.95, 0.90, 0.85]
 DAM_SIRE_BONUS_WEIGHT = 0.35
+FRONT_RUNNING_DIRT_VENUES = ("中山", "福島", "小倉", "札幌", "函館")
 CLASS_WEIGHT_BONUS_RULES = [
     ("GI", r"\bG(?:I|1)\b", 0.60),
     ("GII", r"\bG(?:II|2)\b", 0.50),
@@ -783,6 +784,11 @@ def overall_rank_score(horse: InternalHorse) -> float:
     )
 
 
+def is_front_running_dirt_course(race: PublicRace) -> bool:
+    surface, _distance = parse_course_condition(race.course)
+    return surface == "ダート" and any(venue in race.venue for venue in FRONT_RUNNING_DIRT_VENUES)
+
+
 def parse_horses(detail_html: str) -> list[InternalHorse]:
     soup = BeautifulSoup(detail_html, "html.parser")
     table = soup.find("table", class_="basic") or soup.find("table")
@@ -884,6 +890,7 @@ def public_pick(mark: str, horse: InternalHorse, popularity_status: str, note: s
 
 def make_feature_picks(horses: list[InternalHorse], race: PublicRace, popularity_status: str) -> list[PublicPick]:
     calculate_feature_indices(horses, race)
+    front_running_dirt = is_front_running_dirt_course(race)
     time_closing_rank = sorted(
         horses,
         key=lambda item: (-(item.time_index + item.closing_index + item.class_rank_bonus * 0.25), horse_number(item), item.name),
@@ -917,6 +924,26 @@ def make_feature_picks(horses: list[InternalHorse], race: PublicRace, popularity
             selected.add(horse.number)
             picks_by_mark[mark] = public_pick(mark, horse, popularity_status, note)
         return [picks_by_mark[mark] for mark in MARKS if mark in picks_by_mark]
+
+    if front_running_dirt:
+        ranking_by_mark = [
+            (MARKS[0], time_pace_rank, "time+pace course pattern"),
+            (MARKS[1], time_pace_rank, "time+pace course pattern next"),
+            (MARKS[2], time_closing_rank, "time+closing"),
+            (MARKS[3], overall_rank, "overall"),
+            (MARKS[4], sire_rank, "sire fit"),
+        ]
+        selected: set[str] = set()
+        picks: list[PublicPick] = []
+        for mark, ranked, note in ranking_by_mark:
+            horse = next_unselected(ranked, selected)
+            if horse is None:
+                horse = next_unselected(overall_rank, selected)
+            if horse is None:
+                continue
+            selected.add(horse.number)
+            picks.append(public_pick(mark, horse, popularity_status, note))
+        return picks
 
     ranking_by_mark = [
         ("◎", time_closing_rank, "持ちタイム+末脚指数"),

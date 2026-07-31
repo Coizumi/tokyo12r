@@ -329,6 +329,54 @@ class JraPrizeAndMarkRuleTests(unittest.TestCase):
         self.assertEqual(picks[0].horse_number, "1")
         self.assertEqual(by_mark[updater.MARKS[3]].horse_number, "2")
 
+    def test_front_running_dirt_course_uses_pace_first_marks(self):
+        def horse(
+            number: str,
+            name: str,
+            *,
+            time: float,
+            closing: float,
+            pace: float,
+            overall: float = 50.0,
+            sire: float = 50.0,
+        ) -> InternalHorse:
+            item = InternalHorse(number=number, name=name, sex_age="迚｡4")
+            item.time_index = time
+            item.closing_index = closing
+            item.pace_index = pace
+            item.overall_index = overall
+            item.sire_fit_score = sire
+            return item
+
+        horses = [
+            horse("1", "PaceBest", time=90.0, pace=90.0, closing=10.0),
+            horse("2", "PaceNext", time=80.0, pace=80.0, closing=20.0),
+            horse("3", "ClosingBest", time=70.0, pace=10.0, closing=100.0),
+            horse("4", "OverallBest", time=30.0, pace=30.0, closing=30.0, overall=65.0),
+            horse("5", "SireBest", time=20.0, pace=20.0, closing=20.0, sire=100.0),
+        ]
+        race = PublicRace(
+            venue="2回福島1日",
+            race_no=2,
+            start_time="10:45",
+            title="Test",
+            course="ダート 1,700 m 15 頭",
+            official_url="https://example.test",
+        )
+        original = updater.calculate_feature_indices
+        updater.calculate_feature_indices = lambda _horses, _race: None
+        try:
+            picks = updater.make_feature_picks(horses, race, "mid")
+        finally:
+            updater.calculate_feature_indices = original
+
+        by_mark = {pick.mark: pick for pick in picks}
+        self.assertEqual(by_mark[updater.MARKS[0]].horse_number, "1")
+        self.assertEqual(by_mark[updater.MARKS[1]].horse_number, "2")
+        self.assertEqual(by_mark[updater.MARKS[2]].horse_number, "3")
+        self.assertEqual(by_mark[updater.MARKS[3]].horse_number, "4")
+        self.assertEqual(by_mark[updater.MARKS[4]].horse_number, "5")
+
     def test_class_rank_bonus_uses_race_relative_best_class(self):
         horses = [
             InternalHorse(number="1", name="A", past_texts=["GI 9着"]),
