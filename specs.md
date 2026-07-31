@@ -40,7 +40,7 @@ OCI無料利用枠は、A1 Flexの容量不足とE2.1.Microの実運用余力不
 ## インフラ構成
 
 TOKYO12Rは、公開配信をCloudflare Pagesへ寄せ、データ収集と公開用データ生成をWebARENA Indigo VPSに集約する。
-WebARENA Indigo VPSの電源は自動制御しない。停止または起動が必要な場合は、WebARENA Indigoの管理画面から手動で操作する。
+WebARENA Indigo VPSの電源は、Windows Task SchedulerからWebARENA Indigo APIを呼び出して自動停止・自動起動できる構成とする。APIが利用できない場合のみ、WebARENA Indigoの管理画面から手動で操作する。
 
 ```mermaid
 flowchart LR
@@ -309,7 +309,35 @@ VPSのtimezoneを `Asia/Tokyo` に設定する。
 
 ### VPS電源管理
 
-WebARENA Indigo VPSの自動停止・自動起動は行わない。通常は稼働状態を維持し、保守などで電源操作が必要な場合に限り、WebARENA Indigoの管理画面から手動で停止または起動する。
+WebARENA Indigo VPSの自動停止・自動起動は、Windows Task Schedulerから `deploy/webarena_power.cmd` を実行して行う。
+`deploy/webarena_power.py` はWebARENA Indigo APIでアクセストークンを取得し、対象インスタンスの一覧確認、状態確認、起動、停止を行う。
+
+秘密情報はリポジトリへコミットしない。既存の以下ファイルを実行時に読む。
+
+```text
+xtra/WebARENA/webarena_apikey.txt
+xtra/WebARENA/webarena_apisecret.txt
+```
+
+標準対象インスタンス名は `tokyo12r-batch-01` とする。インスタンス名が変わる場合は `--instance-name`、または `--instance-id` で明示する。
+
+推奨スケジュール:
+
+```text
+起動: 金曜 21:55 JST
+停止: 火曜 18:00 JST
+```
+
+手動確認コマンド:
+
+```bat
+deploy\webarena_power.cmd list
+deploy\webarena_power.cmd status
+deploy\webarena_power.cmd start --wait
+deploy\webarena_power.cmd stop --wait
+```
+
+Hyper-V `al10` でcron化することも可能だが、API Key/SecretをLinuxゲストへ複製する必要がある。現時点では秘密情報をWindows側に留められるWindows Task Scheduler方式を標準とする。
 
 ## データ保存
 

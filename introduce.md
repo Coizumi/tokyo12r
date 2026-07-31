@@ -346,6 +346,36 @@ GitHub tokenは、必要最小限の権限で作成し、リポジトリへコ�
 
 2026-07-03時点では `/etc/tokyo12r-feature-pipeline.env` にCloudflare Pages直接デプロイ設定を配置し、VPSバッチ成功後に `site-dist` をCloudflare Pagesへ反映する。
 
+## WebARENA Indigo 電源制御
+
+WebARENA Indigo VPSの自動停止・自動起動は、Windows Task SchedulerからWebARENA Indigo APIを呼び出して行う。
+標準スクリプトは以下。
+
+```bat
+deploy\webarena_power.cmd list
+deploy\webarena_power.cmd status
+deploy\webarena_power.cmd start --wait
+deploy\webarena_power.cmd stop --wait
+```
+
+スクリプトは以下のローカルファイルを実行時に読む。API Key/Secretはコミットしない。
+
+```text
+D:\dev\jra\xtra\WebARENA\webarena_apikey.txt
+D:\dev\jra\xtra\WebARENA\webarena_apisecret.txt
+```
+
+標準対象インスタンス名は `tokyo12r-batch-01`。必要に応じて `--instance-name` または `--instance-id` を指定する。
+
+推奨タスク:
+
+```powershell
+schtasks /Create /TN "TOKYO12R WebARENA Start" /SC WEEKLY /D FRI /ST 21:55 /TR "D:\dev\jra\deploy\webarena_power.cmd start --wait"
+schtasks /Create /TN "TOKYO12R WebARENA Stop"  /SC WEEKLY /D TUE /ST 18:00 /TR "D:\dev\jra\deploy\webarena_power.cmd stop --wait"
+```
+
+Hyper-V `al10` でcron化する場合も同じAPIを使えるが、API Key/SecretをLinuxゲストへ複製する必要がある。秘密情報をWindows側に留められるため、現時点ではWindows Task Scheduler方式を標準とする。
+
 ## 移行時の注意
 
 - OCI検証VMとVCN等のTerraform管理リソースは、WebARENA運用開始前に削除する
