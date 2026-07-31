@@ -14,6 +14,7 @@ bs4_stub = types.ModuleType("bs4")
 bs4_stub.BeautifulSoup = object
 sys.modules.setdefault("bs4", bs4_stub)
 
+import jra_site_updater as updater
 from jra_site_updater import (
     InternalHorse,
     JST,
@@ -271,6 +272,62 @@ class JraDistanceAndClassTests(unittest.TestCase):
         self.assertEqual(adjusted_race_class_score("GI 5着"), 0.60)
         self.assertEqual(adjusted_race_class_score("GI 6着"), 0.30)
         self.assertEqual(adjusted_race_class_score("GI 9着"), 0.30)
+
+
+class JraPrizeAndMarkRuleTests(unittest.TestCase):
+    def test_prize_money_is_annualized_by_age_minus_one(self):
+        younger = InternalHorse(number="1", name="Young", sex_age="牡3 56.0", prize_yen=100_000_000)
+        older = InternalHorse(number="1", name="Older", sex_age="牡5 56.0", prize_yen=100_000_000)
+
+        self.assertEqual(updater.annualized_prize_yen(younger), 50_000_000)
+        self.assertEqual(updater.annualized_prize_yen(older), 25_000_000)
+        self.assertGreater(updater.score_horse(younger), updater.score_horse(older))
+
+    def test_dominant_overall_rank_gets_top_mark_and_delta_gets_next_overall(self):
+        def horse(
+            number: str,
+            name: str,
+            overall: float,
+            *,
+            time: float = 50.0,
+            closing: float = 50.0,
+            pace: float = 50.0,
+            sire: float = 50.0,
+        ) -> InternalHorse:
+            item = InternalHorse(number=number, name=name, sex_age="牡4")
+            item.time_index = time
+            item.closing_index = closing
+            item.pace_index = pace
+            item.overall_index = overall
+            item.sire_fit_score = sire
+            return item
+
+        horses = [
+            horse("1", "Dominant", 100.0),
+            horse("2", "OverallNext", 90.0, time=20.0, closing=20.0, pace=20.0),
+            horse("3", "PaceBest", 70.0, time=100.0, closing=100.0, pace=100.0),
+            horse("4", "ClosingNext", 50.0, time=90.0, closing=90.0, pace=30.0),
+            horse("5", "SireBest", 40.0, sire=100.0),
+        ]
+        race = PublicRace(
+            venue="Tokyo",
+            race_no=1,
+            start_time="12:00",
+            title="Test",
+            course="Turf 1600m",
+            official_url="https://example.test",
+        )
+        original = updater.calculate_feature_indices
+        updater.calculate_feature_indices = lambda _horses, _race: None
+        try:
+            picks = updater.make_feature_picks(horses, race, "mid")
+        finally:
+            updater.calculate_feature_indices = original
+
+        by_mark = {pick.mark: pick for pick in picks}
+        self.assertEqual(picks[0].mark, updater.MARKS[0])
+        self.assertEqual(picks[0].horse_number, "1")
+        self.assertEqual(by_mark[updater.MARKS[3]].horse_number, "2")
 
     def test_class_rank_bonus_uses_race_relative_best_class(self):
         horses = [

@@ -772,6 +772,17 @@ def next_unselected(ranked: list[InternalHorse], selected: set[str]) -> Internal
     return None
 
 
+def overall_rank_score(horse: InternalHorse) -> float:
+    return (
+        horse.overall_index
+        + horse.time_index * 0.10
+        + horse.closing_index * 0.08
+        + horse.pace_index * 0.06
+        + horse.sire_fit_score * 0.08
+        + horse.class_rank_bonus
+    )
+
+
 def parse_horses(detail_html: str) -> list[InternalHorse]:
     soup = BeautifulSoup(detail_html, "html.parser")
     table = soup.find("table", class_="basic") or soup.find("table")
@@ -817,8 +828,23 @@ def parse_horses(detail_html: str) -> list[InternalHorse]:
     return horses
 
 
+def horse_age(horse: InternalHorse) -> int | None:
+    match = re.search(r"(\d+)", horse.sex_age)
+    return int(match.group(1)) if match else None
+
+
+def annualized_prize_yen(horse: InternalHorse) -> float:
+    if not horse.prize_yen:
+        return 0.0
+    age = horse_age(horse)
+    if age is None:
+        return float(horse.prize_yen)
+    return horse.prize_yen / max(age - 1, 1)
+
+
 def score_horse(horse: InternalHorse) -> float:
-    score = math.log10(max(horse.prize_yen, 1)) * 2.1 if horse.prize_yen else 0.0
+    prize_yen = annualized_prize_yen(horse)
+    score = math.log10(max(prize_yen, 1)) * 2.1 if prize_yen else 0.0
     for base_weight, text in zip(RECENT_WEIGHTS, horse.past_texts):
         place_match = re.search(r"(\d+)\s*着", text)
         field_match = re.search(r"(\d+)\s*頭", text)
@@ -866,22 +892,31 @@ def make_feature_picks(horses: list[InternalHorse], race: PublicRace, popularity
         horses,
         key=lambda item: (-(item.time_index + item.pace_index + item.class_rank_bonus * 0.20), horse_number(item), item.name),
     )
-    overall_rank = sorted(
-        horses,
-        key=lambda item: (
-            -(
-                item.overall_index
-                + item.time_index * 0.10
-                + item.closing_index * 0.08
-                + item.pace_index * 0.06
-                + item.sire_fit_score * 0.08
-                + item.class_rank_bonus
-            ),
-            horse_number(item),
-            item.name,
-        ),
-    )
+    overall_rank = sorted(horses, key=lambda item: (-overall_rank_score(item), horse_number(item), item.name))
     sire_rank = sorted(horses, key=lambda item: (-item.sire_fit_score, horse_number(item), item.name))
+
+    if (
+        len(overall_rank) >= 2
+        and overall_rank_score(overall_rank[0]) - overall_rank_score(overall_rank[1]) >= 8.0
+    ):
+        ranking_by_mark = [
+            (MARKS[0], [overall_rank[0]], "総合評価指数 首位差8.0以上"),
+            (MARKS[3], overall_rank[1:], "総合評価指数 次点"),
+            (MARKS[1], time_pace_rank, "持ちタイム+先行力指数"),
+            (MARKS[2], time_closing_rank, "持ちタイム+末脚指数 次点"),
+            (MARKS[4], sire_rank, "血統レース条件適性"),
+        ]
+        selected: set[str] = set()
+        picks_by_mark: dict[str, PublicPick] = {}
+        for mark, ranked, note in ranking_by_mark:
+            horse = next_unselected(ranked, selected)
+            if horse is None:
+                horse = next_unselected(overall_rank, selected)
+            if horse is None:
+                continue
+            selected.add(horse.number)
+            picks_by_mark[mark] = public_pick(mark, horse, popularity_status, note)
+        return [picks_by_mark[mark] for mark in MARKS if mark in picks_by_mark]
 
     ranking_by_mark = [
         ("◎", time_closing_rank, "持ちタイム+末脚指数"),
