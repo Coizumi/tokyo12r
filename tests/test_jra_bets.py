@@ -212,11 +212,15 @@ class JraBatchSkipTests(unittest.TestCase):
 
 
 class JraBetDefinitionTests(unittest.TestCase):
-    def test_trio_formation_is_seven_unique_unordered_tickets(self):
-        trio = next(section for section in bet_definitions() if section["label"] == "3連複フォーメーション")
+    def test_win_and_trio_box_definitions(self):
+        win = next(section for section in bet_definitions() if section["label"] == "単勝")
+        trio = next(section for section in bet_definitions() if section["label"] == "3連複BOX")
 
-        self.assertEqual(trio["formula"], "◎○ - ◎○▲ - ▲△☆")
-        self.assertEqual(trio["count"], 7)
+        self.assertEqual(win["formula"], "◎")
+        self.assertEqual(win["count"], 1)
+        self.assertEqual(win["tickets"], [("◎",)])
+        self.assertEqual(trio["formula"], "◎○▲△☆ BOX")
+        self.assertEqual(trio["count"], 10)
         self.assertEqual(
             trio["tickets"],
             [
@@ -225,17 +229,30 @@ class JraBetDefinitionTests(unittest.TestCase):
                 ("◎", "○", "☆"),
                 ("◎", "▲", "△"),
                 ("◎", "▲", "☆"),
+                ("◎", "△", "☆"),
                 ("○", "▲", "△"),
                 ("○", "▲", "☆"),
+                ("○", "△", "☆"),
+                ("▲", "△", "☆"),
             ],
         )
 
-    def test_trio_result_check_uses_the_seven_ticket_set(self):
-        trio = next(section for section in bet_definitions() if section["label"] == "3連複フォーメーション")
+    def test_pre_august_second_bets_remain_legacy_definitions(self):
+        sections = bet_definitions(dt.date(2026, 8, 1))
+
+        self.assertEqual(sections[0]["label"], "馬連フォーメーション")
+        self.assertEqual(sections[1]["label"], "3連複フォーメーション")
+        self.assertEqual(sections[1]["count"], 7)
+
+    def test_win_and_trio_result_check_use_the_new_ticket_sets(self):
+        win = next(section for section in bet_definitions() if section["label"] == "単勝")
+        trio = next(section for section in bet_definitions() if section["label"] == "3連複BOX")
         tickets = {tuple(ticket) for ticket in trio["tickets"]}
 
+        self.assertTrue(is_winning_ticket(str(win["label"]), ("◎",), ("◎", "○", "▲")))
+        self.assertFalse(is_winning_ticket(str(win["label"]), ("◎",), ("○", "◎", "▲")))
         self.assertTrue(any(is_winning_ticket(str(trio["label"]), ticket, ("○", "☆", "▲")) for ticket in tickets))
-        self.assertFalse(any(is_winning_ticket(str(trio["label"]), ticket, ("▲", "△", "☆")) for ticket in tickets))
+        self.assertTrue(any(is_winning_ticket(str(trio["label"]), ticket, ("▲", "△", "☆")) for ticket in tickets))
 
 
 class JraClosingIndexTests(unittest.TestCase):
@@ -283,7 +300,7 @@ class JraPrizeAndMarkRuleTests(unittest.TestCase):
         self.assertEqual(updater.annualized_prize_yen(older), 25_000_000)
         self.assertGreater(updater.score_horse(younger), updater.score_horse(older))
 
-    def test_dominant_overall_rank_gets_top_mark_and_delta_gets_next_overall(self):
+    def test_standard_course_uses_overall_first_marks(self):
         def horse(
             number: str,
             name: str,
@@ -327,7 +344,9 @@ class JraPrizeAndMarkRuleTests(unittest.TestCase):
         by_mark = {pick.mark: pick for pick in picks}
         self.assertEqual(picks[0].mark, updater.MARKS[0])
         self.assertEqual(picks[0].horse_number, "1")
-        self.assertEqual(by_mark[updater.MARKS[3]].horse_number, "2")
+        self.assertEqual(by_mark[updater.MARKS[1]].horse_number, "2")
+        self.assertEqual(by_mark[updater.MARKS[2]].horse_number, "3")
+        self.assertEqual(by_mark[updater.MARKS[3]].horse_number, "4")
 
     def test_front_running_dirt_course_uses_pace_first_marks(self):
         def horse(

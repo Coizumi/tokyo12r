@@ -13,7 +13,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from functools import lru_cache
 from hashlib import sha256
-from itertools import product
+from itertools import combinations, product
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urljoin, urlparse
@@ -33,6 +33,7 @@ MARKS = ["◎", "○", "▲", "△", "☆"]
 RECENT_WEIGHTS = [1.0, 0.95, 0.90, 0.85]
 DAM_SIRE_BONUS_WEIGHT = 0.35
 FRONT_RUNNING_DIRT_VENUES = ("中山", "福島", "小倉", "札幌", "函館")
+STANDARD_MARK_RULES_V2_START = dt.date(2026, 8, 2)
 CLASS_WEIGHT_BONUS_RULES = [
     ("GI", r"\bG(?:I|1)\b", 0.60),
     ("GII", r"\bG(?:II|2)\b", 0.50),
@@ -387,6 +388,8 @@ def sire_fit_score(sire_name: str, course: str, dam_sire_name: str = "") -> floa
 
 def normalize_bet_type(value: str) -> str:
     text = normalize_text(value).replace("３", "3")
+    if "単勝" in text:
+        return "単勝"
     if "3連単" in text or "三連単" in text:
         return "3連単"
     if "3連複" in text or "三連複" in text:
@@ -452,7 +455,7 @@ def parse_payouts(result_html: str) -> list[PublicPayout]:
     for item in soup.select(".refund_area li"):
         bet_type_node = item.find("dt")
         bet_type = normalize_bet_type(bet_type_node.get_text(" ", strip=True) if bet_type_node else "")
-        if bet_type not in {"馬連", "馬単", "3連複", "3連単"}:
+        if bet_type not in {"単勝", "馬連", "馬単", "3連複", "3連単"}:
             continue
         for line in item.select(".line"):
             number_node = line.select_one(".num")
@@ -475,10 +478,10 @@ def parse_payouts(result_html: str) -> list[PublicPayout]:
             continue
         row_text = " ".join(cells)
         bet_type = normalize_bet_type(row_text)
-        if bet_type not in {"馬連", "馬単", "3連複", "3連単"}:
+        if bet_type not in {"単勝", "馬連", "馬単", "3連複", "3連単"}:
             continue
         amount = next((cell for cell in cells if re.search(r"\d[\d,]*\s*円", cell)), "")
-        number_cells = [cell for cell in cells if len(re.findall(r"\d{1,2}", cell)) >= 2]
+        number_cells = [cell for cell in cells if re.search(r"\d{1,2}", cell)]
         combination = number_cells[0] if number_cells else ""
         if not amount or not combination:
             continue
@@ -888,9 +891,15 @@ def public_pick(mark: str, horse: InternalHorse, popularity_status: str, note: s
     )
 
 
-def make_feature_picks(horses: list[InternalHorse], race: PublicRace, popularity_status: str) -> list[PublicPick]:
+def make_feature_picks(
+    horses: list[InternalHorse],
+    race: PublicRace,
+    popularity_status: str,
+    target_date: dt.date | None = None,
+) -> list[PublicPick]:
     calculate_feature_indices(horses, race)
     front_running_dirt = is_front_running_dirt_course(race)
+    use_standard_mark_rules_v2 = target_date is None or target_date >= STANDARD_MARK_RULES_V2_START
     time_closing_rank = sorted(
         horses,
         key=lambda item: (-(item.time_index + item.closing_index + item.class_rank_bonus * 0.25), horse_number(item), item.name),
@@ -902,7 +911,7 @@ def make_feature_picks(horses: list[InternalHorse], race: PublicRace, popularity
     overall_rank = sorted(horses, key=lambda item: (-overall_rank_score(item), horse_number(item), item.name))
     sire_rank = sorted(horses, key=lambda item: (-item.sire_fit_score, horse_number(item), item.name))
 
-    if (
+    if not use_standard_mark_rules_v2 and (
         len(overall_rank) >= 2
         and overall_rank_score(overall_rank[0]) - overall_rank_score(overall_rank[1]) >= 8.0
     ):
@@ -945,13 +954,23 @@ def make_feature_picks(horses: list[InternalHorse], race: PublicRace, popularity
             picks.append(public_pick(mark, horse, popularity_status, note))
         return picks
 
-    ranking_by_mark = [
-        ("◎", time_closing_rank, "持ちタイム+末脚指数"),
-        ("○", time_pace_rank, "持ちタイム+先行力指数"),
-        ("▲", time_closing_rank, "持ちタイム+末脚指数 次点"),
-        ("△", overall_rank, "総合力指数"),
-        ("☆", sire_rank, "血統レース条件適性"),
-    ]
+    ranking_by_mark = (
+        [
+            ("◎", overall_rank, "総合力指数"),
+            ("○", overall_rank, "総合力指数 次点"),
+            ("▲", time_closing_rank, "持ちタイム+末脚指数"),
+            ("△", time_pace_rank, "持ちタイム+先行力指数"),
+            ("☆", sire_rank, "血統レース条件適性"),
+        ]
+        if use_standard_mark_rules_v2
+        else [
+            ("◎", time_closing_rank, "持ちタイム+末脚指数"),
+            ("○", time_pace_rank, "持ちタイム+先行力指数"),
+            ("▲", time_closing_rank, "持ちタイム+末脚指数 次点"),
+            ("△", overall_rank, "総合力指数"),
+            ("☆", sire_rank, "血統レース条件適性"),
+        ]
+    )
     selected: set[str] = set()
     picks: list[PublicPick] = []
     for mark, ranked, note in ranking_by_mark:
@@ -965,9 +984,14 @@ def make_feature_picks(horses: list[InternalHorse], race: PublicRace, popularity
     return picks
 
 
-def make_picks(horses: list[InternalHorse], popularity_status: str = "中間", race: PublicRace | None = None) -> list[PublicPick]:
+def make_picks(
+    horses: list[InternalHorse],
+    popularity_status: str = "中間",
+    race: PublicRace | None = None,
+    target_date: dt.date | None = None,
+) -> list[PublicPick]:
     if race is not None and horses and all(has_four_race_history(horse) for horse in horses):
-        return make_feature_picks(horses, race, popularity_status)
+        return make_feature_picks(horses, race, popularity_status, target_date)
 
     for horse in horses:
         horse.score = score_horse(horse)
@@ -995,7 +1019,7 @@ def fetch_official_races(target_date: dt.date, delay_seconds: float = 1.2) -> li
             race.odds_status = odds_status_for_race(target_date, race.start_time)
             time.sleep(delay_seconds)
             horses = fetch_horses_with_retry(race)
-            race.picks = make_picks(horses, race.odds_status, race)
+            race.picks = make_picks(horses, race.odds_status, race, target_date)
             race.runners = [
                 PublicRunner(
                     number=horse.number,
@@ -1046,38 +1070,52 @@ def format_formula(marks: list[str], lookup: dict[str, PublicPick]) -> str:
     return " / ".join(f"{mark} {lookup[mark].name}" for mark in marks if mark in lookup)
 
 
-def bet_definitions() -> list[dict[str, object]]:
-    umaren = []
-    for left in ["◎", "○"]:
-        for right in ["○", "▲", "△", "☆"]:
-            if left != right:
-                pair = tuple(sorted((left, right), key=MARKS.index))
-                if pair not in umaren:
-                    umaren.append(pair)
-    trio = []
-    for combo in product(["◎", "○"], ["◎", "○", "▲"], ["▲", "△", "☆"]):
-        if len(set(combo)) != 3:
-            continue
-        ticket = tuple(sorted(combo, key=MARKS.index))
-        if ticket not in trio:
-            trio.append(ticket)
+def bet_definitions(target_date: dt.date | None = None) -> list[dict[str, object]]:
+    if target_date is not None and target_date < STANDARD_MARK_RULES_V2_START:
+        umaren = []
+        for left in ["◎", "○"]:
+            for right in ["○", "▲", "△", "☆"]:
+                if left != right:
+                    pair = tuple(sorted((left, right), key=MARKS.index))
+                    if pair not in umaren:
+                        umaren.append(pair)
+        trio = []
+        for combo in product(["◎", "○"], ["◎", "○", "▲"], ["▲", "△", "☆"]):
+            if len(set(combo)) != 3:
+                continue
+            ticket = tuple(sorted(combo, key=MARKS.index))
+            if ticket not in trio:
+                trio.append(ticket)
+        trifecta = [
+            combo
+            for combo in product(["◎", "○"], ["◎", "○", "▲"], MARKS)
+            if len(set(combo)) == 3
+        ]
+        return [
+            {"label": "馬連フォーメーション", "formula": "◎○ - ○▲△☆", "count": len(umaren), "tickets": umaren},
+            {"label": "3連複フォーメーション", "formula": "◎○ - ◎○▲ - ▲△☆", "count": len(trio), "tickets": trio},
+            {"label": "3連単フォーメーション", "formula": "◎○ - ◎○▲ - ◎○▲△☆", "count": len(trifecta), "tickets": trifecta},
+        ]
+
+    win = [("◎",)]
+    trio = list(combinations(MARKS, 3))
     trifecta = [
         combo
         for combo in product(["◎", "○"], ["◎", "○", "▲"], MARKS)
         if len(set(combo)) == 3
     ]
     return [
-        {"label": "馬連フォーメーション", "formula": "◎○ - ○▲△☆", "count": len(umaren), "tickets": umaren},
-        {"label": "3連複フォーメーション", "formula": "◎○ - ◎○▲ - ▲△☆", "count": len(trio), "tickets": trio},
+        {"label": "単勝", "formula": "◎", "count": len(win), "tickets": win},
+        {"label": "3連複BOX", "formula": "◎○▲△☆ BOX", "count": len(trio), "tickets": trio},
         {"label": "3連単フォーメーション", "formula": "◎○ - ◎○▲ - ◎○▲△☆", "count": len(trifecta), "tickets": trifecta},
     ]
 
 
-def bet_sections(picks: list[PublicPick]) -> list[dict[str, object]]:
+def bet_sections(picks: list[PublicPick], target_date: dt.date | None = None) -> list[dict[str, object]]:
     lookup = pick_lookup(picks)
     if len(lookup) < 5:
         return []
-    return bet_definitions()
+    return bet_definitions(target_date)
 
 
 def normalize_numbers(value: str) -> tuple[str, ...]:
@@ -1101,16 +1139,20 @@ def winning_marks(race: PublicRace) -> tuple[str | None, ...]:
 
 
 def section_payout_type(label: str) -> str:
+    if "単勝" in label:
+        return "単勝"
     if "3連単" in label:
         return "3連単"
     if "3連複" in label:
         return "3連複"
     if "馬単" in label:
         return "馬単"
-    return "馬連"
+    return ""
 
 
 def is_winning_ticket(label: str, ticket: tuple[str, ...], marks: tuple[str | None, ...]) -> bool:
+    if "単勝" in label:
+        return len(marks) >= 1 and marks[0] is not None and tuple(ticket) == (marks[0],)
     if "馬連" in label:
         return len(marks) >= 2 and None not in marks[:2] and set(ticket) == set(marks[:2])
     if "3連複" in label:
@@ -1122,8 +1164,8 @@ def is_winning_ticket(label: str, ticket: tuple[str, ...], marks: tuple[str | No
     return False
 
 
-def bet_outcomes(race: PublicRace) -> list[dict[str, object]]:
-    sections = bet_sections(race.picks)
+def bet_outcomes(race: PublicRace, target_date: dt.date | None = None) -> list[dict[str, object]]:
+    sections = bet_sections(race.picks, target_date)
     if not sections:
         return []
     if not race.result_rows:
@@ -1207,8 +1249,8 @@ def public_payload(date: dt.date, generated_at: str, races: list[PublicRace]) ->
                     }
                     for pick in race.picks
                 ],
-                "bets": bet_sections(race.picks),
-                "bet_outcomes": bet_outcomes(race),
+                "bets": bet_sections(race.picks, date),
+                "bet_outcomes": bet_outcomes(race, date),
             }
             for race in races
         ],
@@ -1269,8 +1311,8 @@ def oci_payload(date: dt.date, generated_at: str, races: list[PublicRace]) -> di
                     }
                     for pick in race.picks
                 ],
-                "bets": bet_sections(race.picks),
-                "bet_outcomes": bet_outcomes(race),
+                "bets": bet_sections(race.picks, date),
+                "bet_outcomes": bet_outcomes(race, date),
             }
         )
     payload["races"] = private_races
@@ -1389,10 +1431,10 @@ def render_result_button(date_key: str, race: PublicRace) -> str:
     )
 
 
-def render_common_bets() -> str:
+def render_common_bets(target_date: dt.date) -> str:
     rows = [
         (str(section["label"]), str(section["formula"]), f'{int(section["count"])}点')
-        for section in bet_definitions()
+        for section in bet_definitions(target_date)
     ]
     items = "".join(
         f'<li><strong>{html.escape(label)}</strong><span>{html.escape(formula)}</span><em>{html.escape(count)}</em></li>'
@@ -1429,8 +1471,8 @@ def render_result_rows(race: PublicRace) -> str:
     return f'<ol class="result-list">{"".join(items)}</ol>'
 
 
-def render_bet_outcomes(race: PublicRace) -> str:
-    outcomes = bet_outcomes(race)
+def render_bet_outcomes(race: PublicRace, target_date: dt.date) -> str:
+    outcomes = bet_outcomes(race, target_date)
     if not outcomes:
         return '<div class="bet-outcomes pending">買い目結果 未確定</div>'
     rows = []
@@ -1452,6 +1494,7 @@ def render_bet_outcomes(race: PublicRace) -> str:
 
 
 def render_index(date_label: str, date_key: str, races: list[PublicRace], generated_at: str) -> str:
+    target_date = dt.date.fromisoformat(date_key)
     venues = list(dict.fromkeys(race.venue for race in races if race.venue))
     if not races:
         body = '<section class="empty">開催情報はまだ取得できていません。</section>'
@@ -1495,7 +1538,7 @@ def render_index(date_label: str, date_key: str, races: list[PublicRace], genera
                 </section>
                 """
             )
-        body = f'<section class="venue-tabs" role="tablist">{"".join(tabs)}</section>{render_common_bets()}{"".join(sections)}'
+        body = f'<section class="venue-tabs" role="tablist">{"".join(tabs)}</section>{render_common_bets(target_date)}{"".join(sections)}'
     return f"""<!doctype html>
 <html lang="ja">
 <head>
@@ -1541,6 +1584,7 @@ def render_index(date_label: str, date_key: str, races: list[PublicRace], genera
 
 
 def render_results(date_label: str, date_key: str, races: list[PublicRace], generated_at: str) -> str:
+    target_date = dt.date.fromisoformat(date_key)
     if not races:
         body = '<section class="empty">レース結果へのリンクはまだ準備中です。</section>'
     else:
@@ -1563,7 +1607,7 @@ def render_results(date_label: str, date_key: str, races: list[PublicRace], gene
                       <div class="race-status">結果 {html.escape(race.result_status)}</div>
                       {render_result_rows(race)}
                       {render_picks(race)}
-                      {render_bet_outcomes(race)}
+                      {render_bet_outcomes(race, target_date)}
                     </article>
                     """
                 )
