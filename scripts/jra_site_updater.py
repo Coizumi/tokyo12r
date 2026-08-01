@@ -787,6 +787,12 @@ def overall_rank_score(horse: InternalHorse) -> float:
     )
 
 
+def public_runner_score(horse: InternalHorse, feature_scored: bool) -> float:
+    if feature_scored:
+        return round(overall_rank_score(horse), 3)
+    return horse.score
+
+
 def is_front_running_dirt_course(race: PublicRace) -> bool:
     surface, _distance = parse_course_condition(race.course)
     return surface == "ダート" and any(venue in race.venue for venue in FRONT_RUNNING_DIRT_VENUES)
@@ -1019,6 +1025,7 @@ def fetch_official_races(target_date: dt.date, delay_seconds: float = 1.2) -> li
             race.odds_status = odds_status_for_race(target_date, race.start_time)
             time.sleep(delay_seconds)
             horses = fetch_horses_with_retry(race)
+            feature_scored = bool(horses) and all(has_four_race_history(horse) for horse in horses)
             race.picks = make_picks(horses, race.odds_status, race, target_date)
             race.runners = [
                 PublicRunner(
@@ -1027,7 +1034,7 @@ def fetch_official_races(target_date: dt.date, delay_seconds: float = 1.2) -> li
                     popularity_rank=horse.popularity_rank,
                     sire_name=horse.sire_name,
                     dam_sire_name=horse.dam_sire_name,
-                    score=horse.score,
+                    score=public_runner_score(horse, feature_scored),
                 )
                 for horse in horses
             ]

@@ -333,6 +333,8 @@ overall_rank_score =
   + class_rank_bonus
 ```
 
+近走4走がそろうレースでは、全頭指数ページに表示する「総合力指数」もこの `overall_rank_score` を使う。したがって、全頭指数の順位は通常コースの◎・○選出に使う総合力ランキングと一致する。近走4走が不足するfallbackレースでは、従来の `fallback_score` を表示する。
+
 ## 印の決定
 
 `make_picks()` が印を決定する。

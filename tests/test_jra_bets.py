@@ -300,6 +300,18 @@ class JraPrizeAndMarkRuleTests(unittest.TestCase):
         self.assertEqual(updater.annualized_prize_yen(older), 25_000_000)
         self.assertGreater(updater.score_horse(younger), updater.score_horse(older))
 
+    def test_full_runner_index_uses_the_mark_ranking_score(self):
+        horse = InternalHorse(number="1", name="Feature", score=42.0)
+        horse.overall_index = 80.0
+        horse.time_index = 60.0
+        horse.closing_index = 50.0
+        horse.pace_index = 40.0
+        horse.sire_fit_score = 70.0
+        horse.class_rank_bonus = 3.0
+
+        self.assertEqual(updater.public_runner_score(horse, True), updater.overall_rank_score(horse))
+        self.assertEqual(updater.public_runner_score(horse, False), 42.0)
+
     def test_standard_course_uses_overall_first_marks(self):
         def horse(
             number: str,
