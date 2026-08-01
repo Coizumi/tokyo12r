@@ -359,6 +359,7 @@ class JraPrizeAndMarkRuleTests(unittest.TestCase):
         self.assertEqual(by_mark[updater.MARKS[1]].horse_number, "2")
         self.assertEqual(by_mark[updater.MARKS[2]].horse_number, "3")
         self.assertEqual(by_mark[updater.MARKS[3]].horse_number, "4")
+        self.assertEqual(by_mark[updater.MARKS[0]].score, updater.overall_rank_score(horses[0]))
 
     def test_front_running_dirt_course_uses_pace_first_marks(self):
         def horse(

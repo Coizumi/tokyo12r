@@ -904,6 +904,8 @@ def make_feature_picks(
     target_date: dt.date | None = None,
 ) -> list[PublicPick]:
     calculate_feature_indices(horses, race)
+    for horse in horses:
+        horse.score = public_runner_score(horse, True)
     front_running_dirt = is_front_running_dirt_course(race)
     use_standard_mark_rules_v2 = target_date is None or target_date >= STANDARD_MARK_RULES_V2_START
     time_closing_rank = sorted(
