@@ -20,6 +20,7 @@ from jra_site_updater import (
     JST,
     PublicPick,
     PublicRace,
+    PublicResultRow,
     PublicRunner,
     adjusted_race_class_score,
     adjusted_recent_weight,
@@ -34,6 +35,7 @@ from jra_site_updater import (
     public_payload,
     render_picks,
     render_result_button,
+    render_results,
     render_scores,
 )
 from jra_oci_batch import all_race_results_confirmed, generation_inputs_newer_than
@@ -138,11 +140,31 @@ class JraPredictionFreezeTests(unittest.TestCase):
         self.assertEqual(races[0].runners[0].score, 72.4)
 
     def test_race_actions_include_score_link(self):
-        html = render_result_button("20260715", self.race("12:00", "1"))
+        race = self.race("12:00", "1")
+        race.result_rows = [PublicResultRow(rank="1", horse_number="1", horse_name="Horse1")]
+        html = render_result_button("20260715", race)
 
         self.assertIn("/result20260715.html#race-", html)
         self.assertIn("/scores20260715.html#race-", html)
         self.assertLess(html.index("レース結果"), html.index("全頭指数"))
+
+    def test_race_actions_disable_result_link_without_confirmed_rows(self):
+        html = render_result_button("20260715", self.race("12:00", "1"))
+
+        self.assertIn('result-link disabled', html)
+        self.assertNotIn('/result20260715.html#race-', html)
+        self.assertIn('/scores20260715.html#race-', html)
+
+    def test_results_page_omits_races_without_confirmed_rows(self):
+        confirmed = self.race("12:00", "1")
+        confirmed.result_rows = [PublicResultRow(rank="1", horse_number="1", horse_name="Confirmed")]
+        pending = self.race("12:30", "2")
+        pending.title = "Pending race"
+
+        html = render_results("2026/08/08", "20260808", [confirmed, pending], "2026-08-08 12:00:00 JST")
+
+        self.assertIn("Confirmed", html)
+        self.assertNotIn("Pending race", html)
 
     def test_render_scores_lists_all_runners_by_score(self):
         race = self.race("12:00", "1")
@@ -212,13 +234,13 @@ class JraBatchSkipTests(unittest.TestCase):
 
 
 class JraBetDefinitionTests(unittest.TestCase):
-    def test_win_and_trio_box_definitions(self):
-        win = next(section for section in bet_definitions() if section["label"] == "単勝")
+    def test_umaren_and_trio_box_definitions(self):
+        umaren = next(section for section in bet_definitions() if section["label"] == "馬連フォーメーション")
         trio = next(section for section in bet_definitions() if section["label"] == "3連複BOX")
 
-        self.assertEqual(win["formula"], "◎")
-        self.assertEqual(win["count"], 1)
-        self.assertEqual(win["tickets"], [("◎",)])
+        self.assertEqual(umaren["formula"], "◎ - ○▲△☆")
+        self.assertEqual(umaren["count"], 4)
+        self.assertEqual(umaren["tickets"], [("◎", "○"), ("◎", "▲"), ("◎", "△"), ("◎", "☆")])
         self.assertEqual(trio["formula"], "◎○▲△☆ BOX")
         self.assertEqual(trio["count"], 10)
         self.assertEqual(
@@ -244,13 +266,20 @@ class JraBetDefinitionTests(unittest.TestCase):
         self.assertEqual(sections[1]["label"], "3連複フォーメーション")
         self.assertEqual(sections[1]["count"], 7)
 
-    def test_win_and_trio_result_check_use_the_new_ticket_sets(self):
-        win = next(section for section in bet_definitions() if section["label"] == "単勝")
+    def test_august_second_to_seventh_bets_remain_single_win(self):
+        sections = bet_definitions(dt.date(2026, 8, 7))
+
+        self.assertEqual(sections[0]["label"], "単勝")
+        self.assertEqual(sections[0]["count"], 1)
+
+    def test_umaren_and_trio_result_check_use_the_new_ticket_sets(self):
+        umaren = next(section for section in bet_definitions() if section["label"] == "馬連フォーメーション")
         trio = next(section for section in bet_definitions() if section["label"] == "3連複BOX")
         tickets = {tuple(ticket) for ticket in trio["tickets"]}
 
-        self.assertTrue(is_winning_ticket(str(win["label"]), ("◎",), ("◎", "○", "▲")))
-        self.assertFalse(is_winning_ticket(str(win["label"]), ("◎",), ("○", "◎", "▲")))
+        self.assertTrue(is_winning_ticket(str(umaren["label"]), ("◎", "○"), ("○", "◎", "▲")))
+        self.assertFalse(is_winning_ticket(str(umaren["label"]), ("◎", "○"), ("▲", "◎", "○")))
+        self.assertEqual(updater.section_payout_type(str(umaren["label"])), "馬連")
         self.assertTrue(any(is_winning_ticket(str(trio["label"]), ticket, ("○", "☆", "▲")) for ticket in tickets))
         self.assertTrue(any(is_winning_ticket(str(trio["label"]), ticket, ("▲", "△", "☆")) for ticket in tickets))
 

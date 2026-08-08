@@ -34,6 +34,7 @@ RECENT_WEIGHTS = [1.0, 0.95, 0.90, 0.85]
 DAM_SIRE_BONUS_WEIGHT = 0.35
 FRONT_RUNNING_DIRT_VENUES = ("中山", "福島", "小倉", "札幌", "函館")
 STANDARD_MARK_RULES_V2_START = dt.date(2026, 8, 2)
+BET_RULES_V3_START = dt.date(2026, 8, 8)
 CLASS_WEIGHT_BONUS_RULES = [
     ("GI", r"\bG(?:I|1)\b", 0.60),
     ("GII", r"\bG(?:II|2)\b", 0.50),
@@ -1080,6 +1081,20 @@ def format_formula(marks: list[str], lookup: dict[str, PublicPick]) -> str:
 
 
 def bet_definitions(target_date: dt.date | None = None) -> list[dict[str, object]]:
+    if target_date is None or target_date >= BET_RULES_V3_START:
+        umaren = [("◎", mark) for mark in ("○", "▲", "△", "☆")]
+        trio = list(combinations(MARKS, 3))
+        trifecta = [
+            combo
+            for combo in product(["◎", "○"], ["◎", "○", "▲"], MARKS)
+            if len(set(combo)) == 3
+        ]
+        return [
+            {"label": "馬連フォーメーション", "formula": "◎ - ○▲△☆", "count": len(umaren), "tickets": umaren},
+            {"label": "3連複BOX", "formula": "◎○▲△☆ BOX", "count": len(trio), "tickets": trio},
+            {"label": "3連単フォーメーション", "formula": "◎○ - ◎○▲ - ◎○▲△☆", "count": len(trifecta), "tickets": trifecta},
+        ]
+
     if target_date is not None and target_date < STANDARD_MARK_RULES_V2_START:
         umaren = []
         for left in ["◎", "○"]:
@@ -1156,6 +1171,8 @@ def section_payout_type(label: str) -> str:
         return "3連複"
     if "馬単" in label:
         return "馬単"
+    if "馬連" in label:
+        return "馬連"
     return ""
 
 
@@ -1432,9 +1449,14 @@ def render_picks(race: PublicRace) -> str:
 
 
 def render_result_button(date_key: str, race: PublicRace) -> str:
+    result_link = (
+        f'<a class="source-link result-link" href="/result{html.escape(date_key)}.html#{html.escape(race_anchor_id(race))}">レース結果</a>'
+        if race.result_rows
+        else '<span class="source-link result-link disabled" aria-disabled="true">レース結果</span>'
+    )
     return (
         f'<div class="race-actions">'
-        f'<a class="source-link result-link" href="/result{html.escape(date_key)}.html#{html.escape(race_anchor_id(race))}">レース結果</a>'
+        f'{result_link}'
         f'<a class="source-link score-link" href="/scores{html.escape(date_key)}.html#{html.escape(race_anchor_id(race))}">全頭指数</a>'
         f"</div>"
     )
@@ -1594,14 +1616,15 @@ def render_index(date_label: str, date_key: str, races: list[PublicRace], genera
 
 def render_results(date_label: str, date_key: str, races: list[PublicRace], generated_at: str) -> str:
     target_date = dt.date.fromisoformat(date_key)
-    if not races:
-        body = '<section class="empty">レース結果へのリンクはまだ準備中です。</section>'
+    confirmed_races = [race for race in races if race.result_rows]
+    if not confirmed_races:
+        body = '<section class="empty">確定結果はまだ取得できていません。</section>'
     else:
         sections = []
-        venues = list(dict.fromkeys(race.venue for race in races if race.venue))
+        venues = list(dict.fromkeys(race.venue for race in confirmed_races if race.venue))
         for venue in venues:
             cards = []
-            for race in sorted([item for item in races if item.venue == venue], key=lambda item: item.race_no):
+            for race in sorted([item for item in confirmed_races if item.venue == venue], key=lambda item: item.race_no):
                 cards.append(
                     f"""
                     <article class="race-card result-race-card" id="{html.escape(race_anchor_id(race))}">
