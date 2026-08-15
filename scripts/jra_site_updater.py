@@ -1208,7 +1208,7 @@ def is_winning_ticket(label: str, ticket: tuple[str, ...], marks: tuple[str | No
     if "単勝" in label:
         return len(marks) >= 1 and marks[0] is not None and tuple(ticket) == (marks[0],)
     if "ワイド" in label:
-        return len(marks) >= 3 and None not in marks[:3] and set(ticket).issubset(set(marks[:3]))
+        return len(marks) >= 3 and set(ticket).issubset({mark for mark in marks[:3] if mark is not None})
     if "馬連" in label:
         return len(marks) >= 2 and None not in marks[:2] and set(ticket) == set(marks[:2])
     if "3連複" in label:

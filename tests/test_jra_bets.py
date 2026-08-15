@@ -285,6 +285,7 @@ class JraBetDefinitionTests(unittest.TestCase):
 
         self.assertTrue(is_winning_ticket(str(wide["label"]), ("○", "▲"), ("○", "◎", "▲")))
         self.assertTrue(is_winning_ticket(str(wide["label"]), ("○", "△"), ("○", "△", "▲")))
+        self.assertTrue(is_winning_ticket(str(wide["label"]), ("▲", "△"), (None, "△", "▲")))
         self.assertFalse(is_winning_ticket(str(wide["label"]), ("○", "△"), ("○", "◎", "▲")))
         self.assertEqual(updater.section_payout_type(str(wide["label"])), "ワイド")
         self.assertTrue(any(is_winning_ticket(str(trio["label"]), ticket, ("○", "☆", "▲")) for ticket in tickets))
