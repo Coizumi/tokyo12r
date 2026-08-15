@@ -234,13 +234,13 @@ class JraBatchSkipTests(unittest.TestCase):
 
 
 class JraBetDefinitionTests(unittest.TestCase):
-    def test_umaren_and_trio_box_definitions(self):
-        umaren = next(section for section in bet_definitions() if section["label"] == "馬連フォーメーション")
+    def test_wide_and_trio_box_definitions(self):
+        wide = next(section for section in bet_definitions() if section["label"] == "ワイドBOX")
         trio = next(section for section in bet_definitions() if section["label"] == "3連複BOX")
 
-        self.assertEqual(umaren["formula"], "◎ - ○▲△☆")
-        self.assertEqual(umaren["count"], 4)
-        self.assertEqual(umaren["tickets"], [("◎", "○"), ("◎", "▲"), ("◎", "△"), ("◎", "☆")])
+        self.assertEqual(wide["formula"], "○▲△ BOX")
+        self.assertEqual(wide["count"], 3)
+        self.assertEqual(wide["tickets"], [("○", "▲"), ("○", "△"), ("▲", "△")])
         self.assertEqual(trio["formula"], "◎○▲△☆ BOX")
         self.assertEqual(trio["count"], 10)
         self.assertEqual(
@@ -272,16 +272,62 @@ class JraBetDefinitionTests(unittest.TestCase):
         self.assertEqual(sections[0]["label"], "単勝")
         self.assertEqual(sections[0]["count"], 1)
 
-    def test_umaren_and_trio_result_check_use_the_new_ticket_sets(self):
-        umaren = next(section for section in bet_definitions() if section["label"] == "馬連フォーメーション")
+    def test_august_fourteenth_keeps_umaren_before_wide_start(self):
+        sections = bet_definitions(dt.date(2026, 8, 14))
+
+        self.assertEqual(sections[0]["label"], "馬連フォーメーション")
+        self.assertEqual(sections[0]["count"], 4)
+
+    def test_wide_and_trio_result_check_use_the_new_ticket_sets(self):
+        wide = next(section for section in bet_definitions() if section["label"] == "ワイドBOX")
         trio = next(section for section in bet_definitions() if section["label"] == "3連複BOX")
         tickets = {tuple(ticket) for ticket in trio["tickets"]}
 
-        self.assertTrue(is_winning_ticket(str(umaren["label"]), ("◎", "○"), ("○", "◎", "▲")))
-        self.assertFalse(is_winning_ticket(str(umaren["label"]), ("◎", "○"), ("▲", "◎", "○")))
-        self.assertEqual(updater.section_payout_type(str(umaren["label"])), "馬連")
+        self.assertTrue(is_winning_ticket(str(wide["label"]), ("○", "▲"), ("○", "◎", "▲")))
+        self.assertTrue(is_winning_ticket(str(wide["label"]), ("○", "△"), ("○", "△", "▲")))
+        self.assertFalse(is_winning_ticket(str(wide["label"]), ("○", "△"), ("○", "◎", "▲")))
+        self.assertEqual(updater.section_payout_type(str(wide["label"])), "ワイド")
         self.assertTrue(any(is_winning_ticket(str(trio["label"]), ticket, ("○", "☆", "▲")) for ticket in tickets))
         self.assertTrue(any(is_winning_ticket(str(trio["label"]), ticket, ("▲", "△", "☆")) for ticket in tickets))
+
+    def test_wide_outcome_lists_each_winning_combination_and_payout(self):
+        race = PublicRace(
+            venue="Tokyo",
+            race_no=1,
+            start_time="12:00",
+            title="Test",
+            course="Turf 1600m",
+            official_url="https://example.test",
+            picks=[
+                PublicPick("◎", "Top", None, "", 80.0, "", "1"),
+                PublicPick("○", "Second", None, "", 79.0, "", "2"),
+                PublicPick("▲", "Third", None, "", 78.0, "", "3"),
+                PublicPick("△", "Fourth", None, "", 77.0, "", "4"),
+                PublicPick("☆", "Fifth", None, "", 76.0, "", "5"),
+            ],
+            result_rows=[
+                PublicResultRow("1", "2", "Second"),
+                PublicResultRow("2", "3", "Third"),
+                PublicResultRow("3", "4", "Fourth"),
+            ],
+            payouts=[
+                updater.PublicPayout("ワイド", "2-3", "240円"),
+                updater.PublicPayout("ワイド", "2-4", "310円"),
+                updater.PublicPayout("ワイド", "3-4", "420円"),
+            ],
+        )
+
+        outcome = updater.bet_outcomes(race, dt.date(2026, 8, 15))[0]
+
+        self.assertEqual(outcome["status"], "hit")
+        self.assertEqual(
+            outcome["payout_details"],
+            [
+                {"ticket": "○-▲", "amount": "240円"},
+                {"ticket": "○-△", "amount": "310円"},
+                {"ticket": "▲-△", "amount": "420円"},
+            ],
+        )
 
 
 class JraClosingIndexTests(unittest.TestCase):

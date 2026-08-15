@@ -35,6 +35,7 @@ DAM_SIRE_BONUS_WEIGHT = 0.35
 FRONT_RUNNING_DIRT_VENUES = ("中山", "福島", "小倉", "札幌", "函館")
 STANDARD_MARK_RULES_V2_START = dt.date(2026, 8, 2)
 BET_RULES_V3_START = dt.date(2026, 8, 8)
+BET_RULES_V4_START = dt.date(2026, 8, 15)
 CLASS_WEIGHT_BONUS_RULES = [
     ("GI", r"\bG(?:I|1)\b", 0.60),
     ("GII", r"\bG(?:II|2)\b", 0.50),
@@ -391,6 +392,8 @@ def normalize_bet_type(value: str) -> str:
     text = normalize_text(value).replace("３", "3")
     if "単勝" in text:
         return "単勝"
+    if "ワイド" in text:
+        return "ワイド"
     if "3連単" in text or "三連単" in text:
         return "3連単"
     if "3連複" in text or "三連複" in text:
@@ -456,7 +459,7 @@ def parse_payouts(result_html: str) -> list[PublicPayout]:
     for item in soup.select(".refund_area li"):
         bet_type_node = item.find("dt")
         bet_type = normalize_bet_type(bet_type_node.get_text(" ", strip=True) if bet_type_node else "")
-        if bet_type not in {"単勝", "馬連", "馬単", "3連複", "3連単"}:
+        if bet_type not in {"単勝", "ワイド", "馬連", "馬単", "3連複", "3連単"}:
             continue
         for line in item.select(".line"):
             number_node = line.select_one(".num")
@@ -479,7 +482,7 @@ def parse_payouts(result_html: str) -> list[PublicPayout]:
             continue
         row_text = " ".join(cells)
         bet_type = normalize_bet_type(row_text)
-        if bet_type not in {"単勝", "馬連", "馬単", "3連複", "3連単"}:
+        if bet_type not in {"単勝", "ワイド", "馬連", "馬単", "3連複", "3連単"}:
             continue
         amount = next((cell for cell in cells if re.search(r"\d[\d,]*\s*円", cell)), "")
         number_cells = [cell for cell in cells if re.search(r"\d{1,2}", cell)]
@@ -1081,6 +1084,19 @@ def format_formula(marks: list[str], lookup: dict[str, PublicPick]) -> str:
 
 
 def bet_definitions(target_date: dt.date | None = None) -> list[dict[str, object]]:
+    if target_date is None or target_date >= BET_RULES_V4_START:
+        wide = list(combinations(("○", "▲", "△"), 2))
+        trio = list(combinations(MARKS, 3))
+        trifecta = [
+            combo
+            for combo in product(["◎", "○"], ["◎", "○", "▲"], MARKS)
+            if len(set(combo)) == 3
+        ]
+        return [
+            {"label": "ワイドBOX", "formula": "○▲△ BOX", "count": len(wide), "tickets": wide},
+            {"label": "3連複BOX", "formula": "◎○▲△☆ BOX", "count": len(trio), "tickets": trio},
+            {"label": "3連単フォーメーション", "formula": "◎○ - ◎○▲ - ◎○▲△☆", "count": len(trifecta), "tickets": trifecta},
+        ]
     if target_date is None or target_date >= BET_RULES_V3_START:
         umaren = [("◎", mark) for mark in ("○", "▲", "△", "☆")]
         trio = list(combinations(MARKS, 3))
@@ -1154,6 +1170,16 @@ def payout_for_type(payouts: list[PublicPayout], bet_type: str) -> PublicPayout 
     return None
 
 
+def payouts_for_ticket(payouts: list[PublicPayout], bet_type: str, numbers: tuple[str, ...]) -> list[PublicPayout]:
+    expected = set(numbers)
+    normalized = normalize_bet_type(bet_type)
+    return [
+        payout
+        for payout in payouts
+        if normalize_bet_type(payout.bet_type) == normalized and set(normalize_numbers(payout.combination)) == expected
+    ]
+
+
 def winning_marks(race: PublicRace) -> tuple[str | None, ...]:
     number_to_mark = {pick.horse_number: pick.mark for pick in race.picks if pick.horse_number and pick.mark}
     return tuple(
@@ -1165,6 +1191,8 @@ def winning_marks(race: PublicRace) -> tuple[str | None, ...]:
 def section_payout_type(label: str) -> str:
     if "単勝" in label:
         return "単勝"
+    if "ワイド" in label:
+        return "ワイド"
     if "3連単" in label:
         return "3連単"
     if "3連複" in label:
@@ -1179,6 +1207,8 @@ def section_payout_type(label: str) -> str:
 def is_winning_ticket(label: str, ticket: tuple[str, ...], marks: tuple[str | None, ...]) -> bool:
     if "単勝" in label:
         return len(marks) >= 1 and marks[0] is not None and tuple(ticket) == (marks[0],)
+    if "ワイド" in label:
+        return len(marks) >= 3 and None not in marks[:3] and set(ticket).issubset(set(marks[:3]))
     if "馬連" in label:
         return len(marks) >= 2 and None not in marks[:2] and set(ticket) == set(marks[:2])
     if "3連複" in label:
@@ -1209,15 +1239,34 @@ def bet_outcomes(race: PublicRace, target_date: dt.date | None = None) -> list[d
     outcomes = []
     for section in sections:
         label = str(section["label"])
-        hit = any(is_winning_ticket(label, tuple(ticket), marks) for ticket in section["tickets"])
-        payout = payout_for_type(race.payouts, section_payout_type(label))
+        hit_tickets = [
+            tuple(ticket)
+            for ticket in section["tickets"]
+            if is_winning_ticket(label, tuple(ticket), marks)
+        ]
+        hit = bool(hit_tickets)
+        payout_type = section_payout_type(label)
+        payout = payout_for_type(race.payouts, payout_type)
+        payout_details: list[dict[str, str]] = []
+        if "ワイド" in label:
+            lookup = pick_lookup(race.picks)
+            for ticket in hit_tickets:
+                numbers = tuple(lookup[mark].horse_number for mark in ticket if mark in lookup)
+                matching_payouts = payouts_for_ticket(race.payouts, payout_type, numbers)
+                payout_details.append(
+                    {
+                        "ticket": "-".join(ticket),
+                        "amount": matching_payouts[0].amount if matching_payouts else "",
+                    }
+                )
         outcomes.append(
             {
                 "label": label,
                 "formula": section["formula"],
                 "count": section["count"],
                 "status": "hit" if hit else "miss",
-                "amount": payout.amount if hit and payout else "",
+                "amount": payout.amount if hit and payout and not payout_details else "",
+                "payout_details": payout_details,
             }
         )
     return outcomes
@@ -1511,7 +1560,18 @@ def render_bet_outcomes(race: PublicRace, target_date: dt.date) -> str:
         status = str(outcome["status"])
         status_label = {"hit": "的中", "miss": "不的中", "pending": "結果未確定"}.get(status, "結果未確定")
         amount = str(outcome.get("amount", ""))
-        amount_html = f'<b>払戻 {html.escape(amount)}</b>' if status == "hit" and amount else f'<b>{status_label}</b>'
+        payout_details = outcome.get("payout_details", [])
+        detail_lines = [
+            f'{html.escape(str(item.get("ticket", "")))} {html.escape(str(item.get("amount", "")) or "払戻未取得")}'
+            for item in payout_details
+            if isinstance(item, dict)
+        ]
+        if status == "hit" and detail_lines:
+            amount_html = f'<b>{"<br>".join(detail_lines)}</b>'
+        elif status == "hit" and amount:
+            amount_html = f'<b>払戻 {html.escape(amount)}</b>'
+        else:
+            amount_html = f'<b>{status_label}</b>'
         rows.append(
             f"""
             <li class="{html.escape(status)}">
