@@ -497,6 +497,42 @@ class JraPrizeAndMarkRuleTests(unittest.TestCase):
 
         self.assertEqual([horse.class_rank_bonus for horse in horses], [4.0, 4.0, 6.0, 0.0])
 
+    def test_grade_target_ignores_two_and_three_win_class_scores(self):
+        horses = [
+            InternalHorse(number="1", name="ThreeWins", past_texts=["3勝クラス 1着"]),
+            InternalHorse(number="2", name="TwoWins", past_texts=["2勝クラス 1着"]),
+            InternalHorse(number="3", name="Open", past_texts=["OP 1着"]),
+            InternalHorse(number="4", name="GradeTwo", past_texts=["GII 1着"]),
+        ]
+        grade_race = PublicRace(
+            venue="東京",
+            race_no=11,
+            start_time="15:45",
+            title="テストステークス GIII",
+            course="芝1600m",
+            official_url="https://example.test/race",
+        )
+
+        apply_class_rank_bonuses(horses, grade_race)
+
+        self.assertTrue(updater.is_grade_race(grade_race))
+        self.assertEqual(adjusted_race_class_score("3勝クラス 1着", grade_target=True), 0.0)
+        self.assertEqual(adjusted_race_class_score("2勝クラス 1着", grade_target=True), 0.0)
+        self.assertEqual(adjusted_race_class_score("OP 1着", grade_target=True), 0.3)
+        self.assertEqual([horse.class_rank_bonus for horse in horses], [0.0, 0.0, 4.0, 6.0])
+
+    def test_grade_detection_supports_roman_grade_notation(self):
+        for title in ("テスト GI", "テスト GII", "テスト GIII", "テスト G1", "テスト G2", "テスト G3", "テスト GⅢ"):
+            race = PublicRace(
+                venue="東京",
+                race_no=11,
+                start_time="15:45",
+                title=title,
+                course="芝1600m",
+                official_url="https://example.test/race",
+            )
+            self.assertTrue(updater.is_grade_race(race))
+
 
 if __name__ == "__main__":
     unittest.main()

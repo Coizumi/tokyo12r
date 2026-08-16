@@ -47,6 +47,8 @@ CLASS_WEIGHT_BONUS_RULES = [
     ("2勝", r"2勝|1000万", 0.12),
     ("Jpn3", r"\bJPN(?:III|3)\b", 0.08),
 ]
+GRADE_RACE_PATTERN = r"\bG(?:III|II|I|3|2|1)\b"
+LOWER_CLASS_PATTERNS = (r"3勝|1600万", r"2勝|1000万")
 PAR_SPEED_BY_SURFACE = {
     "芝": [
         (1300, 17.35),
@@ -237,7 +239,16 @@ def parse_race_list(venue: str, cname: str) -> list[PublicRace]:
             if no_match:
                 race_no = int(no_match.group(1))
         start_time = normalize_text(row.select_one("td.time").get_text(" ", strip=True) if row.select_one("td.time") else "")
-        title = normalize_text(row.select_one("td.race_name").get_text(" ", strip=True) if row.select_one("td.race_name") else "")
+        title_node = row.select_one("td.race_name")
+        title = normalize_text(title_node.get_text(" ", strip=True) if title_node else "")
+        grade_labels = (
+            [normalize_text(image.get("alt", "")) for image in title_node.select("img[alt]")]
+            if title_node is not None
+            else []
+        )
+        grade_labels = [label for label in grade_labels if re.fullmatch(GRADE_RACE_PATTERN, normalize_race_class_text(label))]
+        if grade_labels:
+            title = normalize_text(f"{title} {' '.join(grade_labels)}")
         course = normalize_text(row.select_one("td.dist").get_text(" ", strip=True) if row.select_one("td.dist") else "")
         result_link = row.select_one("a[href*='accessS.html'][href*='CNAME=']")
         result_url = urljoin(BASE_URL, result_link.get("href", "")) if result_link else result_url_from_detail_cname(detail_cname)
@@ -554,7 +565,10 @@ def parse_finish_place(text: str) -> int | None:
     return int(place_match.group(1)) if place_match else None
 
 
-def adjusted_race_class_score(text: str) -> float:
+def adjusted_race_class_score(text: str, grade_target: bool = False) -> float:
+    normalized = normalize_race_class_text(text)
+    if grade_target and any(re.search(pattern, normalized) for pattern in LOWER_CLASS_PATTERNS):
+        return 0.0
     bonus = race_class_bonus(text)
     place = parse_finish_place(text)
     if place is not None and place >= 6:
@@ -631,12 +645,17 @@ def adjusted_recent_weight(base_weight: float, text: str, place: int | None = No
     return round(base_weight, 6)
 
 
-def best_recent_class_score(horse: InternalHorse) -> float:
-    return max((adjusted_race_class_score(text) for text in horse.past_texts), default=0.0)
+def is_grade_race(race: PublicRace | None) -> bool:
+    return race is not None and bool(re.search(GRADE_RACE_PATTERN, normalize_race_class_text(race.title)))
 
 
-def apply_class_rank_bonuses(horses: list[InternalHorse]) -> None:
-    scores = {horse.number: best_recent_class_score(horse) for horse in horses}
+def best_recent_class_score(horse: InternalHorse, grade_target: bool = False) -> float:
+    return max((adjusted_race_class_score(text, grade_target) for text in horse.past_texts), default=0.0)
+
+
+def apply_class_rank_bonuses(horses: list[InternalHorse], race: PublicRace | None = None) -> None:
+    grade_target = is_grade_race(race)
+    scores = {horse.number: best_recent_class_score(horse, grade_target) for horse in horses}
     ranked_scores = sorted({score for score in scores.values() if score > 0.0}, reverse=True)
     bonus_by_rank = [6.0, 4.0, 2.0]
     bonus_by_score = {score: bonus_by_rank[index] for index, score in enumerate(ranked_scores[: len(bonus_by_rank)])}
@@ -750,7 +769,7 @@ def calculate_feature_indices(horses: list[InternalHorse], race: PublicRace) -> 
         overall_raw[key] = score_horse(horse)
         horse.score = overall_raw[key]
         horse.sire_fit_score = sire_fit_score(horse.sire_name, race.course, horse.dam_sire_name)
-    apply_class_rank_bonuses(horses)
+    apply_class_rank_bonuses(horses, race)
 
     if any(value is not None for value in closing_3f_raw.values()):
         closing_raw = closing_3f_raw
@@ -1009,7 +1028,7 @@ def make_picks(
         horse.score = score_horse(horse)
         if race is not None:
             horse.sire_fit_score = sire_fit_score(horse.sire_name, race.course, horse.dam_sire_name)
-    apply_class_rank_bonuses(horses)
+    apply_class_rank_bonuses(horses, race)
     for horse in horses:
         if race is not None:
             horse.score = round(horse.score + horse.sire_fit_score * 0.08 + horse.class_rank_bonus, 3)
