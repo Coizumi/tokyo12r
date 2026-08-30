@@ -32,6 +32,7 @@ from jra_site_updater import (
     is_winning_ticket,
     load_public_payload,
     parse_closing_3f,
+    parse_past_course_values,
     public_payload,
     render_picks,
     render_result_button,
@@ -42,6 +43,13 @@ from jra_oci_batch import all_race_results_confirmed, generation_inputs_newer_th
 
 
 class JraPredictionFreezeTests(unittest.TestCase):
+    def test_parses_adjacent_surface_and_finish_time(self):
+        distance, surface, seconds = parse_past_course_values("2着 12頭 1200芝1:08.9 34.1")
+
+        self.assertEqual(distance, 1200)
+        self.assertEqual(surface, "芝")
+        self.assertEqual(seconds, 68.9)
+
     @staticmethod
     def race(start_time: str, horse_number: str) -> PublicRace:
         return PublicRace(

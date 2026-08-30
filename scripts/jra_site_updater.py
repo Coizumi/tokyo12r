@@ -523,7 +523,7 @@ def enrich_result(race: PublicRace, target_date: dt.date) -> None:
 
 
 def parse_finish_time(value: str) -> float | None:
-    match = re.search(r"\b(\d+):(\d{2}\.\d)\b", value)
+    match = re.search(r"(?<!\d)(\d+):(\d{2}\.\d)(?!\d)", value)
     if match:
         return int(match.group(1)) * 60 + float(match.group(2))
     return None
@@ -628,7 +628,7 @@ def time_speed_value(distance: int, seconds: float, surface: str, race_surface: 
 def parse_past_course_values(text: str) -> tuple[int | None, str, float | None]:
     course_pattern = r"(?:(\d{3,4})(?:m)?\s*(芝ダ|芝|ダート|ダ)|(芝ダ|芝|ダート|ダ)\s*(\d{3,4})(?:m)?)"
     time_pattern = r"(\d+:\d{2}\.\d|\d{2}\.\d)"
-    course_time_match = re.search(rf"{course_pattern}\s+{time_pattern}", text)
+    course_time_match = re.search(rf"{course_pattern}\s*{time_pattern}", text)
     course_match = course_time_match or re.search(course_pattern, text)
     if not course_match:
         return None, "", parse_finish_time(text)
