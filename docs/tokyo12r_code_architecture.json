@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "TOKYO12R コード構成",
+    "output": "tokyo12r_code_architecture.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/Coizumi/tokyo12r.git",
+      "revision": "2768725b59d8656b2bf58a9dd142da0781e6c28d"
+    },
+    "views": [
+      {"id": "scheduled-update", "label": "定期更新の主経路", "focus": ["timer", "batch", "site_generator", "site_dist", "pages"], "note": "定期実行から静的サイト配信までを追います。"},
+      {"id": "data-and-storage", "label": "取得と保存", "focus": ["jra_official", "site_generator", "sire_csv", "feature_pipeline", "sqlite", "r2"], "note": "公式ページの取得、永続化、公開 JSON のアーカイブを分けて確認します。"},
+      {"id": "backup-deploy", "label": "バックアップ公開経路", "focus": ["github_actions", "pages"], "note": "GitHub Actions の手動・push 起点の公開経路です。"}
+    ]
+  },
+  "components": [
+    {"id": "timer", "type": "backend", "label": "systemd timer", "sublabel": "更新スケジュール", "pos": [20, 300], "size": [130, 68], "sources": [{"path": "deploy/systemd/tokyo12r-feature-update.timer", "line": 5, "end_line": 16, "label": "更新時刻と Unit"}]},
+    {"id": "batch", "type": "backend", "label": "jra_oci_batch.py", "sublabel": "更新オーケストレーター", "pos": [180, 300], "size": [150, 68], "sources": [{"path": "scripts/jra_oci_batch.py", "line": 237, "end_line": 332, "label": "main"}, {"path": "deploy/systemd/tokyo12r-feature-update.service", "line": 13, "label": "ExecStart"}]},
+    {"id": "site_generator", "type": "backend", "label": "jra_site_updater.py", "sublabel": "取得・予想・HTML/JSON生成", "pos": [370, 300], "size": [170, 68], "sources": [{"path": "scripts/jra_site_updater.py", "line": 2004, "end_line": 2051, "label": "成果物生成"}, {"path": "scripts/jra_site_updater.py", "line": 2054, "end_line": 2070, "label": "CLI"}]},
+    {"id": "site_dist", "type": "cloud", "label": "site-dist", "sublabel": "静的 HTML・公開 JSON", "pos": [580, 300], "size": [150, 68], "sources": [{"path": "scripts/jra_site_updater.py", "line": 2027, "end_line": 2041, "label": "index・結果・JSON"}]},
+    {"id": "pages", "type": "cloud", "label": "Cloudflare Pages", "sublabel": "tokyo12r.byzin.win", "pos": [1030, 300], "size": [150, 68], "sources": [{"path": "scripts/jra_oci_batch.py", "line": 71, "end_line": 87, "label": "直接デプロイ"}, {"path": ".github/workflows/deploy-tokyo12r.yml", "line": 79, "end_line": 87, "label": "Actions デプロイ"}]},
+    {"id": "jra_official", "type": "external", "label": "JRA 公式ページ", "sublabel": "出走表・結果 HTML", "pos": [370, 70], "size": [170, 68], "sources": [{"path": "scripts/jra_site_updater.py", "line": 23, "end_line": 25, "label": "取得先定義"}, {"path": "scripts/jra_site_updater.py", "line": 1071, "end_line": 1104, "label": "開催取得"}]},
+    {"id": "github_actions", "type": "cloud", "label": "GitHub Actions", "sublabel": "Deploy TOKYO12R", "pos": [1030, 70], "size": [150, 68], "sources": [{"path": ".github/workflows/deploy-tokyo12r.yml", "line": 1, "end_line": 36, "label": "トリガーと生成"}]},
+    {"id": "r2", "type": "cloud", "label": "Cloudflare R2", "sublabel": "公開 JSON 最終版", "pos": [180, 570], "size": [150, 68], "sources": [{"path": "scripts/jra_oci_batch.py", "line": 90, "end_line": 133, "label": "R2 アーカイブ"}, {"path": ".github/workflows/deploy-tokyo12r.yml", "line": 48, "end_line": 70, "label": "Actions 側アーカイブ"}]},
+    {"id": "sire_csv", "type": "database", "label": "Sire_data.csv", "sublabel": "種牡馬適性の入力", "pos": [370, 570], "size": [170, 68], "sources": [{"path": "scripts/jra_feature_pipeline.py", "line": 111, "end_line": 125, "label": "CSV 読み込み"}]},
+    {"id": "feature_pipeline", "type": "backend", "label": "jra_feature_pipeline.py", "sublabel": "特徴量・集計処理", "pos": [570, 570], "size": [170, 68], "sources": [{"path": "scripts/jra_feature_pipeline.py", "line": 645, "end_line": 703, "label": "run_pipeline"}]},
+    {"id": "sqlite", "type": "database", "label": "SQLite", "sublabel": "jra_features.sqlite3", "pos": [800, 570], "size": [150, 68], "sources": [{"path": "scripts/jra_feature_pipeline.py", "line": 28, "end_line": 102, "label": "接続とスキーマ"}]}
+  ],
+  "boundaries": [
+    {"kind": "region", "label": "VPS バッチ環境 /opt/tokyo12r", "wraps": ["timer", "batch", "site_generator", "site_dist", "r2", "sire_csv", "feature_pipeline", "sqlite"], "pad": 20}
+  ],
+  "connections": [
+    {"id": "timer-starts-batch", "from": "timer", "to": "batch", "label": "定期起動", "variant": "emphasis", "labelAt": [165, 382]},
+    {"id": "batch-runs-site-generator", "from": "batch", "to": "site_generator", "label": "公式取得", "variant": "emphasis", "labelAt": [350, 382]},
+    {"id": "jra-response", "from": "jra_official", "to": "site_generator", "label": "HTML 応答", "labelAt": [455, 152]},
+    {"id": "site-generator-writes-site-dist", "from": "site_generator", "to": "site_dist", "label": "HTML・JSON", "variant": "emphasis", "labelAt": [560, 296]},
+    {"id": "site-dist-deploys-pages", "from": "site_dist", "to": "pages", "label": "wrangler deploy", "variant": "emphasis"},
+    {"id": "site-generator-passes-operations-data", "from": "site_generator", "to": "feature_pipeline", "label": "運用 JSON"},
+    {"id": "sire-csv-input", "from": "sire_csv", "to": "feature_pipeline", "label": "CSV", "labelAt": [555, 662]},
+    {"id": "pipeline-upserts-sqlite", "from": "feature_pipeline", "to": "sqlite", "label": "upsert"},
+    {"id": "pipeline-writes-features", "from": "feature_pipeline", "to": "site_dist", "label": "features JSON", "fromSide": "top", "toSide": "bottom", "route": "orthogonal-v"},
+    {"id": "batch-archives-r2", "from": "batch", "to": "r2", "label": "任意アーカイブ", "variant": "dashed", "labelAt": [255, 382]},
+    {"id": "actions-deploys-pages", "from": "github_actions", "to": "pages", "label": "バックアップ公開", "variant": "dashed", "labelAt": [1105, 152]}
+  ],
+  "cards": [
+    {"dot": "emerald", "title": "主経路", "items": ["systemd サービスが jra_oci_batch.py を実行する", "バッチはサイト生成、特徴量処理、任意の直接デプロイを呼ぶ"]},
+    {"dot": "violet", "title": "保存の役割", "items": ["SQLite は特徴量、予想、結果、集計の永続ストア", "R2 は公開 public-data JSON の日次最終版アーカイブ"]},
+    {"dot": "amber", "title": "公開経路", "items": ["site-dist は静的サイトとして Cloudflare Pages へデプロイされる", "GitHub Actions は手動・push 起点のバックアップ経路を持つ"]}
+  ]
+}

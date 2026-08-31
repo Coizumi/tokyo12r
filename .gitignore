@@ -15,3 +15,9 @@ tf/*.tfstate
 tf/*.tfstate.*
 tf/*.auto.tfvars
 tf/*.tfvars.local
+docs/tokyo12r_code_architecture.visual-check.1440x900.dark.png
+docs/tokyo12r_code_architecture.visual-check.1440x900.light.png
+docs/tokyo12r_code_architecture.visual-check.2048x1320.dark.png
+docs/tokyo12r_code_architecture.visual-check.2048x1320.light.png
+docs/tokyo12r_code_architecture.visual-check.html
+docs/tokyo12r_code_architecture.visual-check.json
