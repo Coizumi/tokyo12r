@@ -493,6 +493,7 @@ class JraPrizeAndMarkRuleTests(unittest.TestCase):
         self.assertEqual(by_mark[updater.MARKS[3]].horse_number, "4")
         self.assertEqual(by_mark[updater.MARKS[4]].horse_number, "5")
 
+
     def test_class_rank_bonus_uses_race_relative_best_class(self):
         horses = [
             InternalHorse(number="1", name="A", past_texts=["GI 9着"]),
@@ -540,6 +541,58 @@ class JraPrizeAndMarkRuleTests(unittest.TestCase):
                 official_url="https://example.test/race",
             )
             self.assertTrue(updater.is_grade_race(race))
+
+
+class HanshinCourseBiasTests(unittest.TestCase):
+    @staticmethod
+    def race(course: str) -> PublicRace:
+        return PublicRace(
+            venue="阪神",
+            race_no=1,
+            start_time="12:00",
+            title="テスト競走",
+            course=course,
+            official_url="https://example.test/race",
+        )
+
+    @staticmethod
+    def horse(number: str, frame: str, *, time: float = 50.0, closing: float = 50.0, pace: float = 50.0, past: str = "") -> InternalHorse:
+        return InternalHorse(
+            number=number,
+            name=f"馬{number}",
+            frame_number=frame,
+            time_index=time,
+            closing_index=closing,
+            pace_index=pace,
+            past_texts=[past] if past else [],
+        )
+
+    def test_hanshin_dirt_1400_strongly_favors_outer_frame(self):
+        inner = self.horse("1", "1")
+        outer = self.horse("16", "8")
+        updater.apply_hanshin_course_bias([inner, outer], self.race("ダート 1,400 m"))
+
+        self.assertEqual(inner.course_bias_score, -5.0)
+        self.assertEqual(outer.course_bias_score, 5.0)
+
+    def test_hanshin_turf_2000_favors_inside_front_runner(self):
+        inside_front = self.horse("1", "1", pace=100.0)
+        outside_closer = self.horse("16", "8", pace=0.0)
+        updater.apply_hanshin_course_bias([inside_front, outside_closer], self.race("芝 2,000 m"))
+
+        self.assertEqual(inside_front.course_bias_score, 5.0)
+        self.assertEqual(outside_closer.course_bias_score, -5.0)
+
+    def test_hanshin_turf_1400_shortener_requires_many_sprint_extenders(self):
+        shortener = self.horse("1", "1", past="1着 12頭 1600芝1:34.0")
+        sprinter_one = self.horse("2", "2", past="1着 12頭 1200芝1:08.9")
+        sprinter_two = self.horse("3", "2", past="2着 12頭 1200芝1:09.0")
+        updater.apply_hanshin_course_bias([shortener, sprinter_one, sprinter_two], self.race("芝 1,400 m"))
+
+        self.assertEqual(shortener.course_bias_score, 2.0)
+
+        updater.apply_hanshin_course_bias([shortener, self.horse("2", "2", past="1着 12頭 1400芝1:21.0")], self.race("芝 1,400 m"))
+        self.assertEqual(shortener.course_bias_score, 0.0)
 
 
 if __name__ == "__main__":

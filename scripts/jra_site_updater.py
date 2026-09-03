@@ -80,6 +80,7 @@ ADSENSE_SCRIPT = """  <script async src="https://pagead2.googlesyndication.com/p
 class InternalHorse:
     number: str
     name: str
+    frame_number: str = ""
     popularity_rank: int | None = None
     sex_age: str = ""
     jockey: str = ""
@@ -95,6 +96,7 @@ class InternalHorse:
     sire_fit_score: float = 50.0
     overall_index: float = 50.0
     class_rank_bonus: float = 0.0
+    course_bias_score: float = 0.0
 
 
 @dataclass
@@ -786,6 +788,7 @@ def calculate_feature_indices(horses: list[InternalHorse], race: PublicRace) -> 
         horse.closing_index = closing_indices[key]
         horse.pace_index = pace_indices[key]
         horse.overall_index = overall_indices[key]
+    apply_hanshin_course_bias(horses, race)
 
 
 def horse_number(horse: InternalHorse) -> int:
@@ -807,7 +810,16 @@ def overall_rank_score(horse: InternalHorse) -> float:
         + horse.pace_index * 0.06
         + horse.sire_fit_score * 0.08
         + horse.class_rank_bonus
+        + horse.course_bias_score
     )
+
+
+def time_closing_rank_score(horse: InternalHorse) -> float:
+    return horse.time_index + horse.closing_index + horse.class_rank_bonus * 0.25 + horse.course_bias_score
+
+
+def time_pace_rank_score(horse: InternalHorse) -> float:
+    return horse.time_index + horse.pace_index + horse.class_rank_bonus * 0.20 + horse.course_bias_score
 
 
 def public_runner_score(horse: InternalHorse, feature_scored: bool) -> float:
@@ -819,6 +831,90 @@ def public_runner_score(horse: InternalHorse, feature_scored: bool) -> float:
 def is_front_running_dirt_course(race: PublicRace) -> bool:
     surface, _distance = parse_course_condition(race.course)
     return surface == "ダート" and any(venue in race.venue for venue in FRONT_RUNNING_DIRT_VENUES)
+
+
+def is_hanshin_race(race: PublicRace) -> bool:
+    return "阪神" in race.venue
+
+
+def frame_position(horse: InternalHorse, field_size: int) -> float:
+    if horse.frame_number.isdigit():
+        frame = int(horse.frame_number)
+        if 1 <= frame <= 8:
+            return (frame - 1) / 7
+    number = horse_number(horse)
+    return (number - 1) / max(field_size - 1, 1)
+
+
+def centered_index(value: float) -> float:
+    return (value - 50.0) / 50.0
+
+
+def latest_past_distance(horse: InternalHorse) -> int | None:
+    for text in horse.past_texts:
+        distance, _surface, _seconds = parse_past_course_values(text)
+        if distance is not None:
+            return distance
+    return None
+
+
+def has_many_hanshin_turf_1400_extenders(horses: list[InternalHorse]) -> bool:
+    distances = [latest_past_distance(horse) for horse in horses]
+    known = [distance for distance in distances if distance is not None]
+    if not known:
+        return False
+    return sum(distance <= 1200 for distance in known) / len(known) >= 1 / 3
+
+
+def hanshin_course_bias(horse: InternalHorse, race: PublicRace, field_size: int, many_1400_extenders: bool) -> float:
+    """Return the distance-specific, pre-race course adjustment for Hanshin."""
+    if not is_hanshin_race(race):
+        return 0.0
+
+    surface, distance = parse_course_condition(race.course)
+    if distance is None:
+        return 0.0
+
+    draw = frame_position(horse, field_size)
+    inside = 1.0 - 2.0 * draw
+    outside = -inside
+    pace = centered_index(horse.pace_index)
+    closing = centered_index(horse.closing_index)
+    time_score = centered_index(horse.time_index)
+
+    if surface == "ダート":
+        bias = outside * 3.0
+        if distance in {1400, 2000}:
+            bias += outside * 2.0 + closing * 1.0
+        return round(bias, 3)
+
+    if surface != "芝":
+        return 0.0
+    if distance == 1200:
+        return round(inside * 3.0 + pace * 1.5, 3)
+    if distance == 1400:
+        previous_distance = latest_past_distance(horse)
+        return 2.0 if many_1400_extenders and previous_distance is not None and previous_distance >= 1600 else 0.0
+    if distance in {1600, 1800}:
+        return round(inside * 1.5 + pace * 1.0, 3)
+    if distance == 2000:
+        return round(inside * 3.0 + pace * 2.0, 3)
+    if distance == 2200:
+        return round(time_score * 1.0 + closing * 1.0, 3)
+    if distance == 2400:
+        return round(inside * 2.0 + pace * 1.0, 3)
+    if distance == 2600:
+        return round(closing * 2.0 - pace * 0.5, 3)
+    if distance >= 3000:
+        return round(time_score * 1.5 + closing * 1.0, 3)
+    return 0.0
+
+
+def apply_hanshin_course_bias(horses: list[InternalHorse], race: PublicRace) -> None:
+    many_1400_extenders = has_many_hanshin_turf_1400_extenders(horses)
+    field_size = len(horses)
+    for horse in horses:
+        horse.course_bias_score = hanshin_course_bias(horse, race, field_size, many_1400_extenders)
 
 
 def parse_horses(detail_html: str) -> list[InternalHorse]:
@@ -834,6 +930,7 @@ def parse_horses(detail_html: str) -> list[InternalHorse]:
         number = normalize_text(cells[1].get_text(" ", strip=True))
         if not number.isdigit():
             continue
+        frame_match = re.search(r"\d+", normalize_text(cells[0].get_text(" ", strip=True)))
         horse_cell = cells[2]
         name_node = horse_cell.select_one(".name a") or horse_cell.select_one("a")
         name = normalize_text(name_node.get_text(" ", strip=True) if name_node else "")
@@ -853,6 +950,7 @@ def parse_horses(detail_html: str) -> list[InternalHorse]:
             InternalHorse(
                 number=number,
                 name=name,
+                frame_number=frame_match.group(0) if frame_match else "",
                 popularity_rank=int(popularity_match.group(1)) if popularity_match else None,
                 sex_age=sex_age,
                 jockey=jockey,
@@ -933,11 +1031,11 @@ def make_feature_picks(
     use_standard_mark_rules_v2 = target_date is None or target_date >= STANDARD_MARK_RULES_V2_START
     time_closing_rank = sorted(
         horses,
-        key=lambda item: (-(item.time_index + item.closing_index + item.class_rank_bonus * 0.25), horse_number(item), item.name),
+        key=lambda item: (-time_closing_rank_score(item), horse_number(item), item.name),
     )
     time_pace_rank = sorted(
         horses,
-        key=lambda item: (-(item.time_index + item.pace_index + item.class_rank_bonus * 0.20), horse_number(item), item.name),
+        key=lambda item: (-time_pace_rank_score(item), horse_number(item), item.name),
     )
     overall_rank = sorted(horses, key=lambda item: (-overall_rank_score(item), horse_number(item), item.name))
     sire_rank = sorted(horses, key=lambda item: (-item.sire_fit_score, horse_number(item), item.name))
@@ -1029,9 +1127,11 @@ def make_picks(
         if race is not None:
             horse.sire_fit_score = sire_fit_score(horse.sire_name, race.course, horse.dam_sire_name)
     apply_class_rank_bonuses(horses, race)
+    if race is not None:
+        apply_hanshin_course_bias(horses, race)
     for horse in horses:
         if race is not None:
-            horse.score = round(horse.score + horse.sire_fit_score * 0.08 + horse.class_rank_bonus, 3)
+            horse.score = round(horse.score + horse.sire_fit_score * 0.08 + horse.class_rank_bonus + horse.course_bias_score, 3)
     ranked = sorted(horses, key=lambda item: (-item.score, horse_number(item), item.name))[:5]
     picks: list[PublicPick] = []
     for mark, horse in zip(MARKS, ranked):
