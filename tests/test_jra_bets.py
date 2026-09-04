@@ -543,20 +543,29 @@ class JraPrizeAndMarkRuleTests(unittest.TestCase):
             self.assertTrue(updater.is_grade_race(race))
 
 
-class HanshinCourseBiasTests(unittest.TestCase):
+class CourseBiasTests(unittest.TestCase):
     @staticmethod
-    def race(course: str) -> PublicRace:
+    def race(course: str, venue: str = "阪神", title: str = "テスト競走") -> PublicRace:
         return PublicRace(
-            venue="阪神",
+            venue=venue,
             race_no=1,
             start_time="12:00",
-            title="テスト競走",
+            title=title,
             course=course,
             official_url="https://example.test/race",
         )
 
     @staticmethod
-    def horse(number: str, frame: str, *, time: float = 50.0, closing: float = 50.0, pace: float = 50.0, past: str = "") -> InternalHorse:
+    def horse(
+        number: str,
+        frame: str,
+        *,
+        time: float = 50.0,
+        closing: float = 50.0,
+        pace: float = 50.0,
+        past: str = "",
+        sire: str = "",
+    ) -> InternalHorse:
         return InternalHorse(
             number=number,
             name=f"馬{number}",
@@ -565,12 +574,13 @@ class HanshinCourseBiasTests(unittest.TestCase):
             closing_index=closing,
             pace_index=pace,
             past_texts=[past] if past else [],
+            sire_name=sire,
         )
 
     def test_hanshin_dirt_1400_strongly_favors_outer_frame(self):
         inner = self.horse("1", "1")
         outer = self.horse("16", "8")
-        updater.apply_hanshin_course_bias([inner, outer], self.race("ダート 1,400 m"))
+        updater.apply_course_bias([inner, outer], self.race("ダート 1,400 m"))
 
         self.assertEqual(inner.course_bias_score, -5.0)
         self.assertEqual(outer.course_bias_score, 5.0)
@@ -578,7 +588,7 @@ class HanshinCourseBiasTests(unittest.TestCase):
     def test_hanshin_turf_2000_favors_inside_front_runner(self):
         inside_front = self.horse("1", "1", pace=100.0)
         outside_closer = self.horse("16", "8", pace=0.0)
-        updater.apply_hanshin_course_bias([inside_front, outside_closer], self.race("芝 2,000 m"))
+        updater.apply_course_bias([inside_front, outside_closer], self.race("芝 2,000 m"))
 
         self.assertEqual(inside_front.course_bias_score, 5.0)
         self.assertEqual(outside_closer.course_bias_score, -5.0)
@@ -587,12 +597,53 @@ class HanshinCourseBiasTests(unittest.TestCase):
         shortener = self.horse("1", "1", past="1着 12頭 1600芝1:34.0")
         sprinter_one = self.horse("2", "2", past="1着 12頭 1200芝1:08.9")
         sprinter_two = self.horse("3", "2", past="2着 12頭 1200芝1:09.0")
-        updater.apply_hanshin_course_bias([shortener, sprinter_one, sprinter_two], self.race("芝 1,400 m"))
+        updater.apply_course_bias([shortener, sprinter_one, sprinter_two], self.race("芝 1,400 m"))
 
         self.assertEqual(shortener.course_bias_score, 2.0)
 
-        updater.apply_hanshin_course_bias([shortener, self.horse("2", "2", past="1着 12頭 1400芝1:21.0")], self.race("芝 1,400 m"))
+        updater.apply_course_bias([shortener, self.horse("2", "2", past="1着 12頭 1400芝1:21.0")], self.race("芝 1,400 m"))
         self.assertEqual(shortener.course_bias_score, 0.0)
+
+    def test_kyoto_dirt_1900_favors_inside_closer(self):
+        inside_closer = self.horse("1", "1", closing=100.0)
+        outer_fader = self.horse("16", "8", closing=0.0)
+        updater.apply_course_bias([inside_closer, outer_fader], self.race("ダート 1,900 m", venue="京都"))
+
+        self.assertEqual(inside_closer.course_bias_score, 4.0)
+        self.assertEqual(outer_fader.course_bias_score, -4.0)
+
+    def test_kyoto_turf_1600_favors_shortening_closer(self):
+        shortener = self.horse("1", "1", closing=100.0, past="1着 12頭 1800芝1:46.0")
+        extender = self.horse("2", "2", closing=0.0, past="1着 12頭 1200芝1:08.9")
+        updater.apply_course_bias([shortener, extender], self.race("芝 1,600 m", venue="京都"))
+
+        self.assertEqual(shortener.course_bias_score, 2.7)
+        self.assertEqual(extender.course_bias_score, -1.5)
+
+    def test_fukushima_turf_2000_rewards_closing_kizuna(self):
+        kizuna = self.horse("1", "1", closing=100.0, sire="キズナ")
+        other = self.horse("2", "2", closing=0.0, sire="その他")
+        updater.apply_course_bias([kizuna, other], self.race("芝 2,000 m", venue="福島"))
+
+        self.assertEqual(kizuna.course_bias_score, 3.5)
+        self.assertEqual(other.course_bias_score, -2.0)
+
+    def test_fukushima_turf_1200_reverses_with_explicit_course_layout(self):
+        inner_front = self.horse("1", "1", pace=100.0)
+        outer_closer = self.horse("16", "8", closing=100.0)
+        updater.apply_course_bias([inner_front, outer_closer], self.race("芝 1,200 m Aコース", venue="福島"))
+        self.assertEqual(inner_front.course_bias_score, 3.0)
+
+        updater.apply_course_bias([inner_front, outer_closer], self.race("芝 1,200 m Bコース", venue="福島"))
+        self.assertEqual(outer_closer.course_bias_score, 3.0)
+
+    def test_fukushima_turf_1200_is_neutral_without_explicit_course_layout(self):
+        inner_front = self.horse("1", "1", pace=100.0)
+        outer_closer = self.horse("16", "8", closing=100.0)
+        updater.apply_course_bias([inner_front, outer_closer], self.race("芝 1,200 m", venue="福島"))
+
+        self.assertEqual(inner_front.course_bias_score, 0.0)
+        self.assertEqual(outer_closer.course_bias_score, 0.0)
 
 
 if __name__ == "__main__":

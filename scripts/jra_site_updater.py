@@ -788,7 +788,7 @@ def calculate_feature_indices(horses: list[InternalHorse], race: PublicRace) -> 
         horse.closing_index = closing_indices[key]
         horse.pace_index = pace_indices[key]
         horse.overall_index = overall_indices[key]
-    apply_hanshin_course_bias(horses, race)
+    apply_course_bias(horses, race)
 
 
 def horse_number(horse: InternalHorse) -> int:
@@ -833,8 +833,8 @@ def is_front_running_dirt_course(race: PublicRace) -> bool:
     return surface == "ダート" and any(venue in race.venue for venue in FRONT_RUNNING_DIRT_VENUES)
 
 
-def is_hanshin_race(race: PublicRace) -> bool:
-    return "阪神" in race.venue
+def is_venue_race(race: PublicRace, venue: str) -> bool:
+    return venue in race.venue
 
 
 def frame_position(horse: InternalHorse, field_size: int) -> float:
@@ -866,9 +866,24 @@ def has_many_hanshin_turf_1400_extenders(horses: list[InternalHorse]) -> bool:
     return sum(distance <= 1200 for distance in known) / len(known) >= 1 / 3
 
 
+def is_distance_shortener(horse: InternalHorse, race_distance: int) -> bool:
+    previous_distance = latest_past_distance(horse)
+    return previous_distance is not None and previous_distance > race_distance
+
+
+def course_layout(race: PublicRace) -> str:
+    """Return an explicitly published turf layout, when the source supplies one."""
+    text = normalize_text(f"{race.title} {race.course}")
+    if "Aコース" in text:
+        return "A"
+    if "Bコース" in text:
+        return "B"
+    return ""
+
+
 def hanshin_course_bias(horse: InternalHorse, race: PublicRace, field_size: int, many_1400_extenders: bool) -> float:
     """Return the distance-specific, pre-race course adjustment for Hanshin."""
-    if not is_hanshin_race(race):
+    if not is_venue_race(race, "阪神"):
         return 0.0
 
     surface, distance = parse_course_condition(race.course)
@@ -910,11 +925,104 @@ def hanshin_course_bias(horse: InternalHorse, race: PublicRace, field_size: int,
     return 0.0
 
 
-def apply_hanshin_course_bias(horses: list[InternalHorse], race: PublicRace) -> None:
+def kyoto_course_bias(horse: InternalHorse, race: PublicRace, field_size: int) -> float:
+    """Return the distance-specific, pre-race course adjustment for Kyoto."""
+    if not is_venue_race(race, "京都"):
+        return 0.0
+
+    surface, distance = parse_course_condition(race.course)
+    if distance is None:
+        return 0.0
+
+    draw = frame_position(horse, field_size)
+    inside = 1.0 - 2.0 * draw
+    outside = -inside
+    pace = centered_index(horse.pace_index)
+    closing = centered_index(horse.closing_index)
+    shortener = 1.0 if is_distance_shortener(horse, distance) else 0.0
+
+    if surface == "芝":
+        if distance == 1200:
+            return round(inside * 3.0 + pace * 1.5, 3)
+        if distance == 1400:
+            return round(closing * 1.2 + shortener * 1.0, 3)
+        if distance in {1600, 1800}:
+            return round(closing * 1.5 + shortener * 1.2, 3)
+        if distance == 2000:
+            if "秋華賞" in race.title:
+                return round(closing * 2.0, 3)
+            return round(inside * 2.5 + pace * 1.5, 3)
+        if distance == 2200:
+            return round(closing * 1.4 + shortener * 1.4, 3)
+        if distance == 2400:
+            return round(closing * 1.2, 3)
+        if distance >= 3000:
+            return round(inside * 1.2, 3)
+        return 0.0
+
+    if surface == "ダート":
+        if distance == 1200:
+            return round(pace * 3.0, 3)
+        if distance == 1400:
+            return round(outside * 2.0 + shortener * 1.0, 3)
+        if distance == 1800:
+            return round(inside * 2.0, 3)
+        if distance == 1900:
+            return round(inside * 2.0 + closing * 2.0, 3)
+    return 0.0
+
+
+def fukushima_course_bias(horse: InternalHorse, race: PublicRace, field_size: int) -> float:
+    """Return the pre-race course adjustment supported by Fukushima's published layout."""
+    if not is_venue_race(race, "福島"):
+        return 0.0
+
+    surface, distance = parse_course_condition(race.course)
+    if distance is None:
+        return 0.0
+
+    draw = frame_position(horse, field_size)
+    inside = 1.0 - 2.0 * draw
+    outside = -inside
+    pace = centered_index(horse.pace_index)
+    closing = centered_index(horse.closing_index)
+    shortener = 1.0 if is_distance_shortener(horse, distance) else 0.0
+
+    if surface == "芝":
+        if distance in {1200, 1800}:
+            layout = course_layout(race)
+            if layout == "A":
+                return round(inside * 2.0 + pace * 1.0, 3)
+            if layout == "B":
+                return round(outside * 2.0 + closing * 1.0, 3)
+            return 0.0
+        if distance == 2000:
+            sire_bonus = 1.5 if horse.sire_name == "キズナ" else 0.0
+            return round(closing * 2.0 + pace * 0.5 + sire_bonus, 3)
+        if distance == 2600:
+            sire_bonus = 2.0 if horse.sire_name in {"オルフェーヴル", "ゴールドシップ"} else 0.0
+            return round(closing * 1.0 + sire_bonus, 3)
+        return 0.0
+
+    if surface == "ダート" and distance == 1700:
+        return round(closing * 1.5 + shortener * 1.0, 3)
+    return 0.0
+
+
+def course_bias(horse: InternalHorse, race: PublicRace, field_size: int, many_1400_extenders: bool) -> float:
+    return round(
+        hanshin_course_bias(horse, race, field_size, many_1400_extenders)
+        + kyoto_course_bias(horse, race, field_size)
+        + fukushima_course_bias(horse, race, field_size),
+        3,
+    )
+
+
+def apply_course_bias(horses: list[InternalHorse], race: PublicRace) -> None:
     many_1400_extenders = has_many_hanshin_turf_1400_extenders(horses)
     field_size = len(horses)
     for horse in horses:
-        horse.course_bias_score = hanshin_course_bias(horse, race, field_size, many_1400_extenders)
+        horse.course_bias_score = course_bias(horse, race, field_size, many_1400_extenders)
 
 
 def parse_horses(detail_html: str) -> list[InternalHorse]:
@@ -1128,7 +1236,7 @@ def make_picks(
             horse.sire_fit_score = sire_fit_score(horse.sire_name, race.course, horse.dam_sire_name)
     apply_class_rank_bonuses(horses, race)
     if race is not None:
-        apply_hanshin_course_bias(horses, race)
+        apply_course_bias(horses, race)
     for horse in horses:
         if race is not None:
             horse.score = round(horse.score + horse.sire_fit_score * 0.08 + horse.class_rank_bonus + horse.course_bias_score, 3)
