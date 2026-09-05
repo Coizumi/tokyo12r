@@ -1836,7 +1836,7 @@ def render_index(date_label: str, date_key: str, races: list[PublicRace], genera
                     f"""
                     <article class="race-card">
                       <div class="race-head">
-                        <span class="race-no">{race.race_no}R</span>
+                        <span class="race-no">{html.escape(race.venue)}{race.race_no}R</span>
                         <div>
                           <h3>{html.escape(race.title)}</h3>
                           <p>{html.escape(race.course)}</p>
@@ -1916,7 +1916,7 @@ def render_results(date_label: str, date_key: str, races: list[PublicRace], gene
                     f"""
                     <article class="race-card result-race-card" id="{html.escape(race_anchor_id(race))}">
                       <div class="race-head">
-                        <span class="race-no">{race.race_no}R</span>
+                        <span class="race-no">{html.escape(race.venue)}{race.race_no}R</span>
                         <div>
                           <h3>{html.escape(race.title)}</h3>
                           <p>{html.escape(race.course)}</p>
@@ -2014,7 +2014,7 @@ def render_scores(date_label: str, date_key: str, races: list[PublicRace], gener
                     f"""
                     <article class="race-card score-race-card" id="{html.escape(race_anchor_id(race))}">
                       <div class="race-head">
-                        <span class="race-no">{race.race_no}R</span>
+                        <span class="race-no">{html.escape(race.venue)}{race.race_no}R</span>
                         <div>
                           <h3>{html.escape(race.title)}</h3>
                           <p>{html.escape(race.course)}</p>
@@ -2118,8 +2118,9 @@ main { width:min(1180px, calc(100vw - 24px)); margin:16px auto 40px; }
 .race-list { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:1px; background:var(--line); }
 .race-card { padding:13px; background:white; min-height:246px; scroll-margin-top:82px; }
 .result-race-card { min-height:auto; scroll-margin-top:96px; }
-.race-head { display:grid; grid-template-columns:auto 1fr auto; gap:9px; align-items:start; }
-.race-no { display:inline-grid; place-items:center; min-width:38px; height:30px; border-radius:6px; background:var(--green); color:white; font-weight:800; }
+.race-head { display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:9px; align-items:start; }
+.race-head > div { min-width:0; overflow-wrap:anywhere; }
+.race-no { display:inline-grid; place-items:center; min-width:38px; height:30px; padding:0 7px; white-space:nowrap; font-size:14px; border-radius:6px; background:var(--green); color:white; font-weight:800; }
 .race-head h3 { margin:0; font-size:15px; line-height:1.35; }
 .race-head p { margin:4px 0 0; color:var(--muted); font-size:12px; line-height:1.4; }
 .race-head time { color:var(--deep); font-weight:800; white-space:nowrap; }
