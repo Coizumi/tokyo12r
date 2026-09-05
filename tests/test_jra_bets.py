@@ -43,6 +43,18 @@ from jra_oci_batch import all_race_results_confirmed, generation_inputs_newer_th
 
 
 class JraPredictionFreezeTests(unittest.TestCase):
+    def test_race_heading_uses_venue_without_meeting_numbers(self):
+        race = self.race("12:00", "1")
+        race.venue = "4回中山1日"
+        race.race_no = 12
+        race.result_rows = [PublicResultRow("1", "1", "Test")]
+        args = ("2026/09/05", "20260905", [race], "2026-09-05 12:00:00 JST")
+        for render in (updater.render_index, render_results, render_scores):
+            with self.subTest(page=render.__name__):
+                page = render(*args)
+                self.assertIn('class="race-no">中山12R</span>', page)
+                self.assertIn(updater.race_anchor_id(race), page)
+
     def test_parses_adjacent_surface_and_finish_time(self):
         distance, surface, seconds = parse_past_course_values("2着 12頭 1200芝1:08.9 34.1")
 

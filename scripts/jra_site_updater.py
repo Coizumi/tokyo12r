@@ -198,6 +198,12 @@ def result_url_from_detail_cname(detail_cname: str) -> str:
     return f"{ACCESS_S_URL}?CNAME={result_cname}" if result_cname else ""
 
 
+def race_display_label(race: PublicRace) -> str:
+    venue = re.sub(r"^\d+回\s*", "", normalize_text(race.venue))
+    venue = re.sub(r"\s*\d+日$", "", venue)
+    return f"{venue}{race.race_no}R"
+
+
 def race_anchor_id(race: PublicRace) -> str:
     venue_key = re.sub(r"[^0-9A-Za-z]+", "-", race.venue).strip("-").lower() or "race"
     venue_hash = sha256(race.venue.encode("utf-8")).hexdigest()[:8]
@@ -1836,7 +1842,7 @@ def render_index(date_label: str, date_key: str, races: list[PublicRace], genera
                     f"""
                     <article class="race-card">
                       <div class="race-head">
-                        <span class="race-no">{html.escape(race.venue)}{race.race_no}R</span>
+                        <span class="race-no">{html.escape(race_display_label(race))}</span>
                         <div>
                           <h3>{html.escape(race.title)}</h3>
                           <p>{html.escape(race.course)}</p>
@@ -1916,7 +1922,7 @@ def render_results(date_label: str, date_key: str, races: list[PublicRace], gene
                     f"""
                     <article class="race-card result-race-card" id="{html.escape(race_anchor_id(race))}">
                       <div class="race-head">
-                        <span class="race-no">{html.escape(race.venue)}{race.race_no}R</span>
+                        <span class="race-no">{html.escape(race_display_label(race))}</span>
                         <div>
                           <h3>{html.escape(race.title)}</h3>
                           <p>{html.escape(race.course)}</p>
@@ -2014,7 +2020,7 @@ def render_scores(date_label: str, date_key: str, races: list[PublicRace], gener
                     f"""
                     <article class="race-card score-race-card" id="{html.escape(race_anchor_id(race))}">
                       <div class="race-head">
-                        <span class="race-no">{html.escape(race.venue)}{race.race_no}R</span>
+                        <span class="race-no">{html.escape(race_display_label(race))}</span>
                         <div>
                           <h3>{html.escape(race.title)}</h3>
                           <p>{html.escape(race.course)}</p>
