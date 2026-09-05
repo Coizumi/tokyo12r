@@ -2126,7 +2126,7 @@ main { width:min(1180px, calc(100vw - 24px)); margin:16px auto 40px; }
 .result-race-card { min-height:auto; scroll-margin-top:96px; }
 .race-head { display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:9px; align-items:start; }
 .race-head > div { min-width:0; overflow-wrap:anywhere; }
-.race-no { display:inline-grid; place-items:center; min-width:38px; height:30px; padding:0 7px; white-space:nowrap; font-size:14px; border-radius:6px; background:var(--green); color:white; font-weight:800; }
+.race-no { display:inline-grid; place-items:center; min-width:38px; height:30px; padding:0 10px; white-space:nowrap; font-size:14px; border-radius:6px; background:var(--green); color:white; font-weight:800; }
 .race-head h3 { margin:0; font-size:15px; line-height:1.35; }
 .race-head p { margin:4px 0 0; color:var(--muted); font-size:12px; line-height:1.4; }
 .race-head time { color:var(--deep); font-weight:800; white-space:nowrap; }
