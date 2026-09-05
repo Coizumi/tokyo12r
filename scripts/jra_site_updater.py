@@ -74,6 +74,7 @@ GOOGLE_ANALYTICS_SCRIPT = """  <script async src="https://www.googletagmanager.c
   </script>"""
 ADSENSE_SCRIPT = """  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6637962622384846"
      crossorigin="anonymous"></script>"""
+SITE_CSS_VERSION = "20260905-race-badge-padding"
 
 
 @dataclass
@@ -1871,7 +1872,7 @@ def render_index(date_label: str, date_key: str, races: list[PublicRace], genera
   <title>{SITE_TITLE}</title>
   <meta name="description" content="中央競馬の予想印と買い目を公開するTOKYO12R by ZINです。">
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/assets/site.css">
+  <link rel="stylesheet" href="/assets/site.css?v={SITE_CSS_VERSION}">
   <script src="/assets/site.js" defer></script>
 {GOOGLE_ANALYTICS_SCRIPT}
 {ADSENSE_SCRIPT}
@@ -1953,7 +1954,7 @@ def render_results(date_label: str, date_key: str, races: list[PublicRace], gene
   <title>結果 {date_key} | {SITE_TITLE}</title>
   <meta name="description" content="TOKYO12Rの予想印とレース結果です。">
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/assets/site.css">
+  <link rel="stylesheet" href="/assets/site.css?v={SITE_CSS_VERSION}">
 {GOOGLE_ANALYTICS_SCRIPT}
 {ADSENSE_SCRIPT}
 </head>
@@ -2048,7 +2049,7 @@ def render_scores(date_label: str, date_key: str, races: list[PublicRace], gener
   <title>全頭指数 {date_key} | {SITE_TITLE}</title>
   <meta name="description" content="TOKYO12Rの開催場ごと、レースごとの全頭総合力指数一覧です。">
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/assets/site.css">
+  <link rel="stylesheet" href="/assets/site.css?v={SITE_CSS_VERSION}">
 {GOOGLE_ANALYTICS_SCRIPT}
 {ADSENSE_SCRIPT}
 </head>
