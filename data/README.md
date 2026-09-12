@@ -17,3 +17,11 @@ Columns:
 
 The file is intended as an initial static reference. It should later be
 re-estimated from accumulated race results when enough local data exists.
+
+## `muddy_sire_bonus.json`
+
+Static reference for the direct heavy/sloppy-going sire bonus. It stores only
+the article-derived sire names, source URLs, and the verification date; it
+does not redistribute the source articles. The application applies the bonus
+only to the listed horse's sire, only on turf or dirt marked `重` or `不良`,
+and caps the direct final-index addition at `+1.8`.

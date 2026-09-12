@@ -32,6 +32,8 @@ BANNER_ASSET_NAME = "tokyo12r-paddock-banner.jpg"
 MARKS = ["◎", "○", "▲", "△", "☆"]
 RECENT_WEIGHTS = [1.0, 0.95, 0.90, 0.85]
 DAM_SIRE_BONUS_WEIGHT = 0.35
+MUDDY_SIRE_MAX_BONUS = 1.8
+MUDDY_SIRE_DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "muddy_sire_bonus.json"
 FRONT_RUNNING_DIRT_VENUES = ("中山", "福島", "小倉", "札幌", "函館")
 STANDARD_MARK_RULES_V2_START = dt.date(2026, 8, 2)
 BET_RULES_V3_START = dt.date(2026, 8, 8)
@@ -98,6 +100,7 @@ class InternalHorse:
     overall_index: float = 50.0
     class_rank_bonus: float = 0.0
     course_bias_score: float = 0.0
+    muddy_sire_bonus: float = 0.0
 
 
 @dataclass
@@ -145,6 +148,7 @@ class PublicRace:
     title: str
     course: str
     official_url: str
+    going: str = ""
     result_url: str = ""
     odds_status: str = "中間"
     picks: list[PublicPick] = field(default_factory=list)
@@ -284,8 +288,10 @@ def fetch_detail_html(official_url: str) -> str:
 
 def fetch_horses_with_retry(race: PublicRace, attempts: int = 3, delay_seconds: float = 1.0) -> list[InternalHorse]:
     for attempt in range(attempts):
-        horses = parse_horses(fetch_detail_html(race.official_url))
+        detail_html = fetch_detail_html(race.official_url)
+        horses = parse_horses(detail_html)
         if horses:
+            race.going = parse_going_from_detail(detail_html, race.course)
             return horses
         if attempt + 1 < attempts:
             time.sleep(delay_seconds * (attempt + 1))
@@ -362,6 +368,17 @@ def parse_course_condition(course: str) -> tuple[str, int | None]:
     return surface, distance
 
 
+def parse_going_from_detail(detail_html: str, course: str) -> str:
+    """Extract the announced going for the current race surface from its detail page."""
+    surface, _distance = parse_course_condition(course)
+    if surface not in {"芝", "ダート"}:
+        return ""
+    label = "芝" if surface == "芝" else r"(?:ダート|ダ)"
+    text = normalize_text(html.unescape(re.sub(r"<[^>]+>", " ", detail_html)))
+    match = re.search(rf"{label}\s*[：:]\s*(不良|稍重|重|良)", text)
+    return match.group(1) if match else ""
+
+
 def surface_axis(surface: str) -> int:
     if surface == "芝":
         return 100
@@ -406,6 +423,49 @@ def sire_fit_score(sire_name: str, course: str, dam_sire_name: str = "") -> floa
     if dam_sire_score <= 50.0:
         return score
     return round(min(100.0, score + (dam_sire_score - 50.0) * DAM_SIRE_BONUS_WEIGHT), 3)
+
+
+@lru_cache(maxsize=1)
+def load_muddy_sire_bonus_data() -> dict[str, object]:
+    try:
+        data = json.loads(MUDDY_SIRE_DATA_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def is_heavy_or_sloppy_going(going: str) -> bool:
+    return "不良" in going or ("重" in going and "稍重" not in going)
+
+
+def horse_sex(sex_age: str) -> str:
+    if "牡" in sex_age:
+        return "牡"
+    if "牝" in sex_age:
+        return "牝"
+    return ""
+
+
+def muddy_sire_bonus(sire_name: str, sex_age: str, race: PublicRace) -> float:
+    surface, _distance = parse_course_condition(race.course)
+    if not sire_name or surface not in {"芝", "ダート"} or not is_heavy_or_sloppy_going(race.going):
+        return 0.0
+    data = load_muddy_sire_bonus_data()
+    eligible = data.get("eligible_sires", {})
+    surface_sires = eligible.get(surface, {}) if isinstance(eligible, dict) else {}
+    if not isinstance(surface_sires, dict):
+        return 0.0
+    names = set(surface_sires.get("all", []))
+    sex = horse_sex(sex_age)
+    if sex:
+        names.update(surface_sires.get(sex, []))
+    if sire_name not in names:
+        return 0.0
+    try:
+        configured_bonus = float(data.get("bonus_points", 0.0))
+    except (TypeError, ValueError):
+        return 0.0
+    return round(min(MUDDY_SIRE_MAX_BONUS, max(0.0, configured_bonus)), 3)
 
 
 def normalize_bet_type(value: str) -> str:
@@ -778,6 +838,7 @@ def calculate_feature_indices(horses: list[InternalHorse], race: PublicRace) -> 
         overall_raw[key] = score_horse(horse)
         horse.score = overall_raw[key]
         horse.sire_fit_score = sire_fit_score(horse.sire_name, race.course, horse.dam_sire_name)
+        horse.muddy_sire_bonus = muddy_sire_bonus(horse.sire_name, horse.sex_age, race)
     apply_class_rank_bonuses(horses, race)
 
     if any(value is not None for value in closing_3f_raw.values()):
@@ -818,6 +879,7 @@ def overall_rank_score(horse: InternalHorse) -> float:
         + horse.sire_fit_score * 0.08
         + horse.class_rank_bonus
         + horse.course_bias_score
+        + horse.muddy_sire_bonus
     )
 
 
@@ -1153,7 +1215,10 @@ def make_feature_picks(
         key=lambda item: (-time_pace_rank_score(item), horse_number(item), item.name),
     )
     overall_rank = sorted(horses, key=lambda item: (-overall_rank_score(item), horse_number(item), item.name))
-    sire_rank = sorted(horses, key=lambda item: (-item.sire_fit_score, horse_number(item), item.name))
+    sire_rank = sorted(
+        horses,
+        key=lambda item: (-(item.sire_fit_score + item.muddy_sire_bonus), horse_number(item), item.name),
+    )
 
     if not use_standard_mark_rules_v2 and (
         len(overall_rank) >= 2
@@ -1241,12 +1306,20 @@ def make_picks(
         horse.score = score_horse(horse)
         if race is not None:
             horse.sire_fit_score = sire_fit_score(horse.sire_name, race.course, horse.dam_sire_name)
+            horse.muddy_sire_bonus = muddy_sire_bonus(horse.sire_name, horse.sex_age, race)
     apply_class_rank_bonuses(horses, race)
     if race is not None:
         apply_course_bias(horses, race)
     for horse in horses:
         if race is not None:
-            horse.score = round(horse.score + horse.sire_fit_score * 0.08 + horse.class_rank_bonus + horse.course_bias_score, 3)
+            horse.score = round(
+                horse.score
+                + horse.sire_fit_score * 0.08
+                + horse.class_rank_bonus
+                + horse.course_bias_score
+                + horse.muddy_sire_bonus,
+                3,
+            )
     ranked = sorted(horses, key=lambda item: (-item.score, horse_number(item), item.name))[:5]
     picks: list[PublicPick] = []
     for mark, horse in zip(MARKS, ranked):
@@ -1518,6 +1591,7 @@ def public_payload(date: dt.date, generated_at: str, races: list[PublicRace]) ->
                 "start_time": race.start_time,
                 "title": race.title,
                 "course": race.course,
+                "going": race.going,
                 "odds_status": race.odds_status,
                 "result_status": race.result_status,
                 "result_rows": [
@@ -1577,6 +1651,7 @@ def oci_payload(date: dt.date, generated_at: str, races: list[PublicRace]) -> di
                 "start_time": race.start_time,
                 "title": race.title,
                 "course": race.course,
+                "going": race.going,
                 "odds_status": race.odds_status,
                 "result_url": race.result_url,
                 "result_status": race.result_status,
@@ -1683,6 +1758,7 @@ def load_public_payload(input_path: Path | None, target_date: dt.date) -> tuple[
                 title=str(item.get("title", "")),
                 course=str(item.get("course", "")),
                 official_url=str(item.get("official_url", "")),
+                going=str(item.get("going", "")),
                 result_url=str(item.get("result_url", "")),
                 odds_status=odds_status,
                 picks=picks,

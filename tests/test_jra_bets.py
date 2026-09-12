@@ -368,6 +368,44 @@ class JraClosingIndexTests(unittest.TestCase):
         self.assertLess(sixth, placed)
 
 
+class MuddySireBonusTests(unittest.TestCase):
+    @staticmethod
+    def race(course: str, going: str) -> PublicRace:
+        return PublicRace(
+            venue="東京",
+            race_no=1,
+            start_time="12:00",
+            title="テスト競走",
+            course=course,
+            official_url="https://example.test/race",
+            going=going,
+        )
+
+    def test_heavy_or_sloppy_going_adds_the_capped_sire_bonus(self):
+        self.assertEqual(updater.muddy_sire_bonus("キズナ", "牡4", self.race("芝1600m", "重")), 1.8)
+        self.assertEqual(updater.muddy_sire_bonus("マジェスティックウォリアー", "牡4", self.race("ダート1400m", "不良")), 1.8)
+
+    def test_slightly_heavy_or_wrong_surface_does_not_add_the_bonus(self):
+        self.assertEqual(updater.muddy_sire_bonus("キズナ", "牡4", self.race("芝1600m", "稍重")), 0.0)
+        self.assertEqual(updater.muddy_sire_bonus("キズナ", "牡4", self.race("ダート1400m", "重")), 0.0)
+
+    def test_sex_restricted_sires_require_the_matching_sex(self):
+        race = self.race("ダート1400m", "重")
+        self.assertEqual(updater.muddy_sire_bonus("キンシャサノキセキ", "牡4", race), 1.8)
+        self.assertEqual(updater.muddy_sire_bonus("キンシャサノキセキ", "牝4", race), 0.0)
+
+    def test_bonus_is_added_directly_to_the_feature_ranking_score(self):
+        base = InternalHorse(number="1", name="Base")
+        boosted = InternalHorse(number="2", name="Boosted", muddy_sire_bonus=1.8)
+
+        self.assertAlmostEqual(updater.overall_rank_score(boosted) - updater.overall_rank_score(base), 1.8)
+
+    def test_detail_going_parser_uses_the_current_surface(self):
+        detail = "天候：雨 芝：重 ダート：良"
+        self.assertEqual(updater.parse_going_from_detail(detail, "芝1600m"), "重")
+        self.assertEqual(updater.parse_going_from_detail(detail, "ダート1400m"), "良")
+
+
 class JraDistanceAndClassTests(unittest.TestCase):
     def test_distance_extension_and_shortening_factors(self):
         self.assertEqual(distance_adjustment_factor(1400, 1700), 0.985)
