@@ -26,12 +26,9 @@ from jra_site_updater import (
     adjusted_recent_weight,
     apply_class_rank_bonuses,
     bet_definitions,
-    closing_3f_score,
-    distance_adjustment_factor,
     freeze_started_predictions,
     is_winning_ticket,
     load_public_payload,
-    parse_closing_3f,
     parse_past_course_values,
     public_payload,
     render_picks,
@@ -351,23 +348,6 @@ class JraBetDefinitionTests(unittest.TestCase):
         )
 
 
-class JraClosingIndexTests(unittest.TestCase):
-    def test_parse_closing_3f_from_past_text(self):
-        self.assertEqual(parse_closing_3f("東京 芝1600 1:33.2 3F 34.1 1着 16頭"), 34.1)
-
-    def test_front_runner_fast_closing_is_scored(self):
-        front_runner = closing_3f_score(34.0, 1, 12, [1, 1, 1, 1])
-        slower_front_runner = closing_3f_score(35.0, 1, 12, [1, 1, 1, 1])
-
-        self.assertGreater(front_runner, slower_front_runner)
-
-    def test_sixth_or_worse_is_discounted(self):
-        placed = closing_3f_score(34.0, 2, 12, [4, 4, 3, 2])
-        sixth = closing_3f_score(34.0, 6, 12, [4, 4, 3, 6])
-
-        self.assertLess(sixth, placed)
-
-
 class MuddySireBonusTests(unittest.TestCase):
     @staticmethod
     def race(course: str, going: str) -> PublicRace:
@@ -394,11 +374,14 @@ class MuddySireBonusTests(unittest.TestCase):
         self.assertEqual(updater.muddy_sire_bonus("キンシャサノキセキ", "牡4", race), 1.8)
         self.assertEqual(updater.muddy_sire_bonus("キンシャサノキセキ", "牝4", race), 0.0)
 
-    def test_bonus_is_added_directly_to_the_feature_ranking_score(self):
-        base = InternalHorse(number="1", name="Base")
-        boosted = InternalHorse(number="2", name="Boosted", muddy_sire_bonus=1.8)
+    def test_bonus_is_added_directly_to_the_unified_score(self):
+        horse = InternalHorse(number="1", name="Boosted", sire_name="キズナ", sex_age="牡4", past_texts=["5着 10頭"])
 
-        self.assertAlmostEqual(updater.overall_rank_score(boosted) - updater.overall_rank_score(base), 1.8)
+        updater.make_picks([horse], race=self.race("芝1600m", "良"))
+        dry_score = horse.score
+        updater.make_picks([horse], race=self.race("芝1600m", "重"))
+
+        self.assertAlmostEqual(horse.score - dry_score, 1.8)
 
     def test_detail_going_parser_uses_the_current_surface(self):
         detail = "天候：雨 芝：重 ダート：良"
@@ -406,16 +389,7 @@ class MuddySireBonusTests(unittest.TestCase):
         self.assertEqual(updater.parse_going_from_detail(detail, "ダート1400m"), "良")
 
 
-class JraDistanceAndClassTests(unittest.TestCase):
-    def test_distance_extension_and_shortening_factors(self):
-        self.assertEqual(distance_adjustment_factor(1400, 1700), 0.985)
-        self.assertEqual(distance_adjustment_factor(1200, 1700), 0.970)
-        self.assertEqual(distance_adjustment_factor(1000, 1700), 0.955)
-        self.assertEqual(distance_adjustment_factor(2100, 1700), 1.008)
-        self.assertEqual(distance_adjustment_factor(2300, 1700), 1.015)
-        self.assertEqual(distance_adjustment_factor(2400, 1700), 1.020)
-        self.assertEqual(distance_adjustment_factor(1800, 1700), 1.0)
-
+class JraClassTests(unittest.TestCase):
     def test_recent_weight_no_longer_adds_absolute_class_bonus(self):
         self.assertEqual(adjusted_recent_weight(1.0, "GI 1着"), 1.0)
 
@@ -425,124 +399,37 @@ class JraDistanceAndClassTests(unittest.TestCase):
         self.assertEqual(adjusted_race_class_score("GI 9着"), 0.30)
 
 
-class JraPrizeAndMarkRuleTests(unittest.TestCase):
-    def test_prize_money_is_annualized_by_age_minus_one(self):
-        younger = InternalHorse(number="1", name="Young", sex_age="牡3 56.0", prize_yen=100_000_000)
-        older = InternalHorse(number="1", name="Older", sex_age="牡5 56.0", prize_yen=100_000_000)
+class JraUnifiedScoreTests(unittest.TestCase):
+    def test_prize_money_does_not_change_base_score(self):
+        no_prize = InternalHorse(number="1", name="No prize", sex_age="牡3 56.0", past_texts=["2着 10頭 3番人気"])
+        high_prize = InternalHorse(
+            number="1",
+            name="High prize",
+            sex_age="牡8 56.0",
+            prize_yen=2_000_000_000,
+            past_texts=["2着 10頭 3番人気"],
+        )
 
-        self.assertEqual(updater.annualized_prize_yen(younger), 50_000_000)
-        self.assertEqual(updater.annualized_prize_yen(older), 25_000_000)
-        self.assertGreater(updater.score_horse(younger), updater.score_horse(older))
+        self.assertEqual(updater.score_horse(no_prize), updater.score_horse(high_prize))
 
-    def test_full_runner_index_uses_the_mark_ranking_score(self):
-        horse = InternalHorse(number="1", name="Feature", score=42.0)
-        horse.overall_index = 80.0
-        horse.time_index = 60.0
-        horse.closing_index = 50.0
-        horse.pace_index = 40.0
-        horse.sire_fit_score = 70.0
-        horse.class_rank_bonus = 3.0
-
-        self.assertEqual(updater.public_runner_score(horse, True), updater.overall_rank_score(horse))
-        self.assertEqual(updater.public_runner_score(horse, False), 42.0)
-
-    def test_standard_course_uses_overall_first_marks(self):
-        def horse(
-            number: str,
-            name: str,
-            overall: float,
-            *,
-            time: float = 50.0,
-            closing: float = 50.0,
-            pace: float = 50.0,
-            sire: float = 50.0,
-        ) -> InternalHorse:
-            item = InternalHorse(number=number, name=name, sex_age="牡4")
-            item.time_index = time
-            item.closing_index = closing
-            item.pace_index = pace
-            item.overall_index = overall
-            item.sire_fit_score = sire
-            return item
-
+    def test_four_run_cards_use_the_unified_score_path(self):
         horses = [
-            horse("1", "Dominant", 100.0),
-            horse("2", "OverallNext", 90.0, time=20.0, closing=20.0, pace=20.0),
-            horse("3", "PaceBest", 70.0, time=100.0, closing=100.0, pace=100.0),
-            horse("4", "ClosingNext", 50.0, time=90.0, closing=90.0, pace=30.0),
-            horse("5", "SireBest", 40.0, sire=100.0),
+            InternalHorse(number=str(number), name=f"Horse {number}", past_texts=["1着 10頭 1番人気"] * 4)
+            for number in range(1, 6)
         ]
         race = PublicRace(
-            venue="Tokyo",
+            venue="東京",
             race_no=1,
             start_time="12:00",
             title="Test",
-            course="Turf 1600m",
+            course="芝1600m",
             official_url="https://example.test",
         )
-        original = updater.calculate_feature_indices
-        updater.calculate_feature_indices = lambda _horses, _race: None
-        try:
-            picks = updater.make_feature_picks(horses, race, "mid")
-        finally:
-            updater.calculate_feature_indices = original
 
-        by_mark = {pick.mark: pick for pick in picks}
-        self.assertEqual(picks[0].mark, updater.MARKS[0])
-        self.assertEqual(picks[0].horse_number, "1")
-        self.assertEqual(by_mark[updater.MARKS[1]].horse_number, "2")
-        self.assertEqual(by_mark[updater.MARKS[2]].horse_number, "3")
-        self.assertEqual(by_mark[updater.MARKS[3]].horse_number, "4")
-        self.assertEqual(by_mark[updater.MARKS[0]].score, updater.overall_rank_score(horses[0]))
+        picks = updater.make_picks(horses, race=race)
 
-    def test_front_running_dirt_course_uses_pace_first_marks(self):
-        def horse(
-            number: str,
-            name: str,
-            *,
-            time: float,
-            closing: float,
-            pace: float,
-            overall: float = 50.0,
-            sire: float = 50.0,
-        ) -> InternalHorse:
-            item = InternalHorse(number=number, name=name, sex_age="迚｡4")
-            item.time_index = time
-            item.closing_index = closing
-            item.pace_index = pace
-            item.overall_index = overall
-            item.sire_fit_score = sire
-            return item
-
-        horses = [
-            horse("1", "PaceBest", time=90.0, pace=90.0, closing=10.0),
-            horse("2", "PaceNext", time=80.0, pace=80.0, closing=20.0),
-            horse("3", "ClosingBest", time=70.0, pace=10.0, closing=100.0),
-            horse("4", "OverallBest", time=30.0, pace=30.0, closing=30.0, overall=65.0),
-            horse("5", "SireBest", time=20.0, pace=20.0, closing=20.0, sire=100.0),
-        ]
-        race = PublicRace(
-            venue="2回福島1日",
-            race_no=2,
-            start_time="10:45",
-            title="Test",
-            course="ダート 1,700 m 15 頭",
-            official_url="https://example.test",
-        )
-        original = updater.calculate_feature_indices
-        updater.calculate_feature_indices = lambda _horses, _race: None
-        try:
-            picks = updater.make_feature_picks(horses, race, "mid")
-        finally:
-            updater.calculate_feature_indices = original
-
-        by_mark = {pick.mark: pick for pick in picks}
-        self.assertEqual(by_mark[updater.MARKS[0]].horse_number, "1")
-        self.assertEqual(by_mark[updater.MARKS[1]].horse_number, "2")
-        self.assertEqual(by_mark[updater.MARKS[2]].horse_number, "3")
-        self.assertEqual(by_mark[updater.MARKS[3]].horse_number, "4")
-        self.assertEqual(by_mark[updater.MARKS[4]].horse_number, "5")
-
+        self.assertEqual([pick.horse_number for pick in picks], ["1", "2", "3", "4", "5"])
+        self.assertAlmostEqual(horses[0].score, updater.score_horse(horses[0]) + horses[0].sire_fit_score * 0.08)
 
     def test_class_rank_bonus_uses_race_relative_best_class(self):
         horses = [
@@ -610,9 +497,6 @@ class CourseBiasTests(unittest.TestCase):
         number: str,
         frame: str,
         *,
-        time: float = 50.0,
-        closing: float = 50.0,
-        pace: float = 50.0,
         past: str = "",
         sire: str = "",
     ) -> InternalHorse:
@@ -620,9 +504,6 @@ class CourseBiasTests(unittest.TestCase):
             number=number,
             name=f"馬{number}",
             frame_number=frame,
-            time_index=time,
-            closing_index=closing,
-            pace_index=pace,
             past_texts=[past] if past else [],
             sire_name=sire,
         )
@@ -635,13 +516,13 @@ class CourseBiasTests(unittest.TestCase):
         self.assertEqual(inner.course_bias_score, -5.0)
         self.assertEqual(outer.course_bias_score, 5.0)
 
-    def test_hanshin_turf_2000_favors_inside_front_runner(self):
-        inside_front = self.horse("1", "1", pace=100.0)
-        outside_closer = self.horse("16", "8", pace=0.0)
+    def test_hanshin_turf_2000_favors_inside_frame(self):
+        inside_front = self.horse("1", "1")
+        outside_closer = self.horse("16", "8")
         updater.apply_course_bias([inside_front, outside_closer], self.race("芝 2,000 m"))
 
-        self.assertEqual(inside_front.course_bias_score, 5.0)
-        self.assertEqual(outside_closer.course_bias_score, -5.0)
+        self.assertEqual(inside_front.course_bias_score, 3.0)
+        self.assertEqual(outside_closer.course_bias_score, -3.0)
 
     def test_hanshin_turf_1400_shortener_requires_many_sprint_extenders(self):
         shortener = self.horse("1", "1", past="1着 12頭 1600芝1:34.0")
@@ -654,42 +535,42 @@ class CourseBiasTests(unittest.TestCase):
         updater.apply_course_bias([shortener, self.horse("2", "2", past="1着 12頭 1400芝1:21.0")], self.race("芝 1,400 m"))
         self.assertEqual(shortener.course_bias_score, 0.0)
 
-    def test_kyoto_dirt_1900_favors_inside_closer(self):
-        inside_closer = self.horse("1", "1", closing=100.0)
-        outer_fader = self.horse("16", "8", closing=0.0)
+    def test_kyoto_dirt_1900_favors_inside_frame(self):
+        inside_closer = self.horse("1", "1")
+        outer_fader = self.horse("16", "8")
         updater.apply_course_bias([inside_closer, outer_fader], self.race("ダート 1,900 m", venue="京都"))
 
-        self.assertEqual(inside_closer.course_bias_score, 4.0)
-        self.assertEqual(outer_fader.course_bias_score, -4.0)
+        self.assertEqual(inside_closer.course_bias_score, 2.0)
+        self.assertEqual(outer_fader.course_bias_score, -2.0)
 
-    def test_kyoto_turf_1600_favors_shortening_closer(self):
-        shortener = self.horse("1", "1", closing=100.0, past="1着 12頭 1800芝1:46.0")
-        extender = self.horse("2", "2", closing=0.0, past="1着 12頭 1200芝1:08.9")
+    def test_kyoto_turf_1600_favors_shortener(self):
+        shortener = self.horse("1", "1", past="1着 12頭 1800芝1:46.0")
+        extender = self.horse("2", "2", past="1着 12頭 1200芝1:08.9")
         updater.apply_course_bias([shortener, extender], self.race("芝 1,600 m", venue="京都"))
 
-        self.assertEqual(shortener.course_bias_score, 2.7)
-        self.assertEqual(extender.course_bias_score, -1.5)
+        self.assertEqual(shortener.course_bias_score, 1.2)
+        self.assertEqual(extender.course_bias_score, 0.0)
 
-    def test_fukushima_turf_2000_rewards_closing_kizuna(self):
-        kizuna = self.horse("1", "1", closing=100.0, sire="キズナ")
-        other = self.horse("2", "2", closing=0.0, sire="その他")
+    def test_fukushima_turf_2000_rewards_kizuna(self):
+        kizuna = self.horse("1", "1", sire="キズナ")
+        other = self.horse("2", "2", sire="その他")
         updater.apply_course_bias([kizuna, other], self.race("芝 2,000 m", venue="福島"))
 
-        self.assertEqual(kizuna.course_bias_score, 3.5)
-        self.assertEqual(other.course_bias_score, -2.0)
+        self.assertEqual(kizuna.course_bias_score, 1.5)
+        self.assertEqual(other.course_bias_score, 0.0)
 
     def test_fukushima_turf_1200_reverses_with_explicit_course_layout(self):
-        inner_front = self.horse("1", "1", pace=100.0)
-        outer_closer = self.horse("16", "8", closing=100.0)
+        inner_front = self.horse("1", "1")
+        outer_closer = self.horse("16", "8")
         updater.apply_course_bias([inner_front, outer_closer], self.race("芝 1,200 m Aコース", venue="福島"))
-        self.assertEqual(inner_front.course_bias_score, 3.0)
+        self.assertEqual(inner_front.course_bias_score, 2.0)
 
         updater.apply_course_bias([inner_front, outer_closer], self.race("芝 1,200 m Bコース", venue="福島"))
-        self.assertEqual(outer_closer.course_bias_score, 3.0)
+        self.assertEqual(outer_closer.course_bias_score, 2.0)
 
     def test_fukushima_turf_1200_is_neutral_without_explicit_course_layout(self):
-        inner_front = self.horse("1", "1", pace=100.0)
-        outer_closer = self.horse("16", "8", closing=100.0)
+        inner_front = self.horse("1", "1")
+        outer_closer = self.horse("16", "8")
         updater.apply_course_bias([inner_front, outer_closer], self.race("芝 1,200 m", venue="福島"))
 
         self.assertEqual(inner_front.course_bias_score, 0.0)
