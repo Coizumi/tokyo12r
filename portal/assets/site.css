@@ -80,8 +80,7 @@ a {
 }
 
 .intro p,
-.content-grid p,
-.notice p {
+.content-grid p {
   margin: 0;
   color: #334155;
   font-size: 15px;
@@ -179,23 +178,17 @@ a {
   margin-top: 22px;
 }
 
-.content-grid article,
-.notice {
+.content-grid article {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
   padding: 18px;
 }
 
-.content-grid h2,
-.notice h2 {
+.content-grid h2 {
   margin: 0 0 8px;
   font-size: 17px;
   line-height: 1.35;
-}
-
-.notice {
-  margin-top: 14px;
 }
 
 .site-footer {
