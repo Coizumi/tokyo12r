@@ -171,6 +171,100 @@ a {
   font-size: clamp(22px, 3vw, 34px);
 }
 
+.shop-banners {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.shop-banner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 104px;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 20px 26px;
+  text-decoration: none;
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.shop-banner::after {
+  position: absolute;
+  top: -42px;
+  right: 10%;
+  width: 220px;
+  height: 180px;
+  content: "";
+  transform: rotate(-22deg);
+  opacity: 0.32;
+}
+
+.shop-copy,
+.shop-arrow {
+  position: relative;
+  z-index: 1;
+}
+
+.shop-copy {
+  display: grid;
+  gap: 5px;
+}
+
+.shop-label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.shop-copy strong {
+  font-size: clamp(24px, 4vw, 38px);
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+.shop-arrow {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 23px;
+  line-height: 1;
+}
+
+.shop-banner:hover,
+.shop-banner:focus-visible {
+  transform: translateY(-1px);
+}
+
+.eldersign-banner {
+  border-color: #303030;
+  background: #131313;
+  color: #f5f5f3;
+  box-shadow: 0 12px 28px rgba(15, 15, 15, 0.22);
+}
+
+.eldersign-banner::after {
+  border: 2px solid #8f8f8f;
+  box-shadow: 30px 0 0 -1px #262626, 60px 0 0 -1px #626262;
+}
+
+.myojodo-banner {
+  border-color: #ed796b;
+  background: #ff9a8a;
+  color: #4b1b1a;
+  box-shadow: 0 12px 28px rgba(181, 74, 62, 0.2);
+}
+
+.myojodo-banner::after {
+  border: 2px solid #c75b50;
+  box-shadow: 30px 0 0 -1px #ef7a6a, 60px 0 0 -1px #ffb6a8;
+}
+
 .content-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -226,5 +320,10 @@ a {
 
   .site-banner {
     min-height: 180px;
+  }
+
+  .shop-banner {
+    min-height: 92px;
+    padding: 18px 20px;
   }
 }
