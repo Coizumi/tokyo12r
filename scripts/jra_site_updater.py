@@ -33,6 +33,12 @@ RECENT_WEIGHTS = [1.0, 0.95, 0.90, 0.85]
 DAM_SIRE_BONUS_WEIGHT = 0.35
 MUDDY_SIRE_MAX_BONUS = 1.8
 MUDDY_SIRE_DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "muddy_sire_bonus.json"
+LEFT_TURN_VENUES = frozenset({"東京", "中京", "新潟"})
+RIGHT_TURN_VENUES = frozenset({"札幌", "函館", "福島", "中山", "京都", "阪神", "小倉"})
+TURN_DIRECTION_MIN_TARGET_STARTS = 2
+TURN_DIRECTION_MIN_OPPOSITE_STARTS = 1
+TURN_DIRECTION_MAX_BONUS = 2.5
+TURN_DIRECTION_MAX_PENALTY = 3.5
 STANDARD_MARK_RULES_V2_START = dt.date(2026, 8, 2)
 BET_RULES_V3_START = dt.date(2026, 8, 8)
 BET_RULES_V4_START = dt.date(2026, 8, 15)
@@ -78,6 +84,7 @@ class InternalHorse:
     sire_fit_score: float = 50.0
     class_rank_bonus: float = 0.0
     course_bias_score: float = 0.0
+    turn_direction_bias_score: float = 0.0
     muddy_sire_bonus: float = 0.0
 
 
@@ -658,6 +665,92 @@ def is_venue_race(race: PublicRace, venue: str) -> bool:
     return venue in race.venue
 
 
+def turn_direction_for_venue(value: str) -> str:
+    text = normalize_text(value)
+    if any(venue in text for venue in LEFT_TURN_VENUES):
+        return "left"
+    if any(venue in text for venue in RIGHT_TURN_VENUES):
+        return "right"
+    return ""
+
+
+def parse_past_turn_direction_result(text: str) -> tuple[str, float, bool, bool] | None:
+    """Return direction and normalized finish data for a known JRA past performance."""
+    direction = turn_direction_for_venue(text)
+    place = parse_finish_place(text)
+    field_match = re.search(r"(\d+)\s*頭", normalize_text(text))
+    if not direction or place is None or field_match is None:
+        return None
+    field_size = int(field_match.group(1))
+    if field_size < 2 or place < 1 or place > field_size:
+        return None
+    finish_quality = (field_size + 1 - place) / field_size
+    is_top_three = place <= 3
+    is_poor = place / field_size >= 0.7
+    return direction, finish_quality, is_top_three, is_poor
+
+
+def weighted_average(values: list[tuple[float, float]]) -> float:
+    if not values:
+        return 0.0
+    weight_total = sum(weight for weight, _value in values)
+    if weight_total <= 0.0:
+        return 0.0
+    return sum(weight * value for weight, value in values) / weight_total
+
+
+def turn_direction_bias(horse: InternalHorse, race: PublicRace) -> float:
+    """Score proven left/right-turn preference only when both directions are comparable."""
+    target_direction = turn_direction_for_venue(race.venue)
+    if not target_direction:
+        return 0.0
+
+    target_runs: list[tuple[float, float, bool, bool]] = []
+    opposite_runs: list[tuple[float, float, bool, bool]] = []
+    for weight, text in zip(RECENT_WEIGHTS, horse.past_texts):
+        parsed = parse_past_turn_direction_result(text)
+        if parsed is None:
+            continue
+        direction, finish_quality, is_top_three, is_poor = parsed
+        item = (weight, finish_quality, is_top_three, is_poor)
+        if direction == target_direction:
+            target_runs.append(item)
+        else:
+            opposite_runs.append(item)
+
+    if len(target_runs) < TURN_DIRECTION_MIN_TARGET_STARTS or len(opposite_runs) < TURN_DIRECTION_MIN_OPPOSITE_STARTS:
+        return 0.0
+
+    target_form = weighted_average([(weight, quality) for weight, quality, _top_three, _poor in target_runs])
+    opposite_form = weighted_average([(weight, quality) for weight, quality, _top_three, _poor in opposite_runs])
+    form_edge = target_form - opposite_form
+    target_top_three_rate = weighted_average([(weight, float(is_top_three)) for weight, _quality, is_top_three, _poor in target_runs])
+    target_poor_rate = weighted_average([(weight, float(is_poor)) for weight, _quality, _top_three, is_poor in target_runs])
+
+    if target_form >= 0.65 and form_edge >= 0.12 and target_top_three_rate >= 0.5:
+        return round(
+            min(
+                TURN_DIRECTION_MAX_BONUS,
+                (target_form - 0.5) * 3.0 + form_edge * 3.0 + target_top_three_rate,
+            ),
+            3,
+        )
+    if target_form <= 0.4 and form_edge <= -0.12 and target_poor_rate >= 0.5:
+        return round(
+            -min(
+                TURN_DIRECTION_MAX_PENALTY,
+                (0.5 - target_form) * 4.0 + (-form_edge) * 3.0 + target_poor_rate * 1.4,
+            ),
+            3,
+        )
+    return 0.0
+
+
+def apply_turn_direction_bias(horses: list[InternalHorse], race: PublicRace) -> None:
+    for horse in horses:
+        horse.turn_direction_bias_score = turn_direction_bias(horse, race)
+
+
 def frame_position(horse: InternalHorse, field_size: int) -> float:
     if horse.frame_number.isdigit():
         frame = int(horse.frame_number)
@@ -924,6 +1017,7 @@ def make_picks(
     apply_class_rank_bonuses(horses, race)
     if race is not None:
         apply_course_bias(horses, race)
+        apply_turn_direction_bias(horses, race)
     for horse in horses:
         if race is not None:
             horse.score = round(
@@ -931,6 +1025,7 @@ def make_picks(
                 + horse.sire_fit_score * 0.08
                 + horse.class_rank_bonus
                 + horse.course_bias_score
+                + horse.turn_direction_bias_score
                 + horse.muddy_sire_bonus,
                 3,
             )

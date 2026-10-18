@@ -577,5 +577,56 @@ class CourseBiasTests(unittest.TestCase):
         self.assertEqual(outer_closer.course_bias_score, 0.0)
 
 
+class TurnDirectionBiasTests(unittest.TestCase):
+    @staticmethod
+    def race(venue: str) -> PublicRace:
+        return PublicRace(
+            venue=venue,
+            race_no=1,
+            start_time="12:00",
+            title="テスト競走",
+            course="芝1600m",
+            official_url="https://example.test/race",
+        )
+
+    @staticmethod
+    def horse(*past_texts: str) -> InternalHorse:
+        return InternalHorse(number="1", name="方向馬", past_texts=list(past_texts))
+
+    def test_left_turn_venue_mapping(self):
+        self.assertEqual(updater.turn_direction_for_venue("4回東京7日"), "left")
+        self.assertEqual(updater.turn_direction_for_venue("中京"), "left")
+        self.assertEqual(updater.turn_direction_for_venue("新潟"), "left")
+        self.assertEqual(updater.turn_direction_for_venue("中山"), "right")
+        self.assertEqual(updater.turn_direction_for_venue("海外"), "")
+
+    def test_left_turn_good_form_is_capped_at_bonus_maximum(self):
+        horse = self.horse(
+            "2026年9月1日 東京 1着 10頭",
+            "2026年8月1日 中京 1着 10頭",
+            "2026年7月1日 中山 10着 10頭",
+        )
+
+        self.assertEqual(updater.turn_direction_bias(horse, self.race("東京")), 2.5)
+
+    def test_left_turn_poor_form_is_capped_at_penalty_maximum(self):
+        horse = self.horse(
+            "2026年9月1日 東京 10着 10頭",
+            "2026年8月1日 新潟 9着 10頭",
+            "2026年7月1日 中山 1着 10頭",
+        )
+
+        self.assertEqual(updater.turn_direction_bias(horse, self.race("東京")), -3.5)
+
+    def test_insufficient_or_uncomparable_direction_data_is_neutral(self):
+        horse = self.horse(
+            "2026年9月1日 東京 1着 10頭",
+            "2026年8月1日 中京 2着 10頭",
+        )
+
+        self.assertEqual(updater.turn_direction_bias(horse, self.race("東京")), 0.0)
+        self.assertIsNone(updater.parse_past_turn_direction_result("2026年9月1日 東京 1着"))
+
+
 if __name__ == "__main__":
     unittest.main()
