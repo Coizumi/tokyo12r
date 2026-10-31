@@ -12,43 +12,40 @@ GitHub Actionsには重いデータ収集や過去データ再計算を載せな
 
 役割分担:
 
-- WebARENA Indigo VPS: データ収集、SQLite蓄積、公開用予想/結果データ生成、週/月/年サマリー生成、公開用特徴量ファイル生成
-- WebARENA Indigo VPS: Cloudflare Pagesへの本番デプロイ
+- ローカルLinux VM (`jra-vm` / 192.168.1.3): データ収集、SQLite蓄積、公開用予想/結果データ生成、週/月/年サマリー生成、公開用特徴量ファイル生成
+- ローカルLinux VM (`jra-vm`): Cloudflare Pagesへの本番デプロイ
 - GitHub Actions: 手動再生成、緊急時、検証用のバックアップデプロイ経路
 - Cloudflare Pages: 静的サイト配信
 - Cloudflare R2: 公開用JRA JSONの日次最終版アーカイブ
 
-WebARENA Indigo は 2GB プランを標準構成とする。
+標準実行環境はローカルのLinux VM（`jra-vm`, Ubuntu 24.04 LTS）とする。
+※2026年10月にWebARENA Indigo VPSからローカルLinux VMへバッチ実行環境を移行した。
 
 ```text
-service: WebARENA Indigo Linux
-plan: 2GB
-cpu: 2vCPU
-memory: 2GB
-ssd: 40GB
-network: 100Mbps upper limit
-region: Tokyo
-monthly upper limit: 814 JPY
+service: Local Linux VM (jra-vm)
+ip: 192.168.1.3
+user: mmaster (service user: tokyo12r)
+os: Ubuntu 24.04 LTS
+directory: /opt/tokyo12r
 ```
 
-VPS側は差分更新とSQLite中心で構成する。全量再取得や重い機械学習は初期対象外とする。
+VM側は差分更新とSQLite中心で構成する。全量再取得や重い機械学習は初期対象外とする。
 
-VPSはWebサーバーとして公開しない。公開はCloudflare Pagesに寄せ、VPSはバックエンドバッチと永続DBに限定する。
+VMはWebサーバーとして公開しない。公開はCloudflare Pagesに寄せ、VMはバックエンドバッチと永続DBに限定する。
 
-OCI無料利用枠は、A1 Flexの容量不足とE2.1.Microの実運用余力不足が確認されたため、標準構成から外す。既存のOCI検証リソースは移行前に削除する。
+WebARENA Indigo VPSおよびOCI無料利用枠は過去の実行基盤であり、現在はローカルLinux VMへ移行完了し停止・廃止している。
 
 ## インフラ構成
 
-TOKYO12Rは、公開配信をCloudflare Pagesへ寄せ、データ収集と公開用データ生成をWebARENA Indigo VPSに集約する。
-WebARENA Indigo VPSの電源は、Windows Task SchedulerからWebARENA Indigo APIを呼び出して自動停止・自動起動できる構成とする。APIが利用できない場合のみ、WebARENA Indigoの管理画面から手動で操作する。
+TOKYO12Rは、公開配信をCloudflare Pagesへ寄せ、データ収集と公開用データ生成をローカルLinux VM (`jra-vm`) に集約する。
 
 ```mermaid
 flowchart LR
   user["利用者"] --> pages["Cloudflare Pages<br/>tokyo12r.byzin.win"]
   pages --> html["静的HTML<br/>index.html / resultYYYYMMDD.html"]
 
-  vps["WebARENA Indigo VPS<br/>tokyo12r-batch-01"]
-  vps --> systemd["systemd timer<br/>tokyo12r-feature-update.timer"]
+  vm["Linux VM<br/>jra-vm (192.168.1.3)"]
+  vm --> systemd["systemd timer<br/>tokyo12r-feature-update.timer"]
   systemd --> batch["JRA特徴量バッチ<br/>scripts/jra_oci_batch.py"]
   batch --> jra["JRA公式データ"]
   batch --> sqlite["SQLite<br/>/opt/tokyo12r/var/jra_features.sqlite3"]
@@ -64,7 +61,7 @@ flowchart LR
 インフラ上の責務:
 
 - Cloudflare Pages: 公開サイト配信のみを担当する
-- WebARENA Indigo VPS: JRAデータ収集、SQLite蓄積、公開用予想/結果データ生成、Cloudflare Pages本番デプロイを担当する
+- ローカルLinux VM (`jra-vm`): JRAデータ収集、SQLite蓄積、公開用予想/結果データ生成、Cloudflare Pages本番デプロイを担当する
 - Cloudflare R2: `site-dist/public-dataYYYYMMDD.json` の日次最終版を保存する。履歴DBではなく、公開JSONのアーカイブ用途に限定する
 - GitHub Actions: 手動再生成、緊急時、検証用のバックアップデプロイを担当する
 - GitHub repository: コード、仕様、systemd unitを管理する
@@ -309,10 +306,11 @@ VPSのtimezoneを `Asia/Tokyo` に設定する。
 
 公式サイトへの連続アクセスを抑えるため、JRA公式取得時の既定待機時間は `1.2` 秒とする。既存の `public-dataYYYYMMDD.json` で全レースの結果が確定済み、かつ公開生成物より新しい生成入力ファイルがない場合、その日の後続更新は公式取得、SQLite更新、R2保存、Cloudflare Pagesデプロイを行わず正常終了する。
 
-### VPS電源管理
+### VPS電源管理（過去のWebARENA運用）
 
-WebARENA Indigo VPSの自動停止・自動起動は、Windows Task Schedulerから `deploy/webarena_power.cmd` を実行して行う。
-`deploy/webarena_power.py` はWebARENA Indigo APIでアクセストークンを取得し、対象インスタンスの一覧確認、状態確認、起動、停止を行う。
+ローカルLinux VMへの移行に伴い、WebARENA APIによる自動起動・停止は不要となった。
+過去のWebARENA Indigo VPS運用時は、Windows Task Schedulerから `deploy/webarena_power.cmd` を実行して停止・起動を行っていた。
+`deploy/webarena_power.py` はWebARENA Indigo APIでアクセストークンを取得し、対象インスタンスの一覧確認、状態確認、起動、停止を行っていた。
 
 秘密情報はリポジトリへコミットしない。既存の以下ファイルを実行時に読む。
 
@@ -323,7 +321,7 @@ xtra/WebARENA/webarena_apisecret.txt
 
 標準対象インスタンス名は `tokyo12r-batch-01` とする。インスタンス名が変わる場合は `--instance-name`、または `--instance-id` で明示する。
 
-推奨スケジュール:
+過去の推奨スケジュール:
 
 ```text
 起動: 金曜 21:55 JST
@@ -388,7 +386,7 @@ jra/latest/public-data.json
 - 公開用の `site-dist/public-dataYYYYMMDD.json`
 - 血統詳細などを含む非公開運用データ `/opt/tokyo12r/var/oci-data.json` はR2へ保存しない
 
-WebARENA VPSで `TOKYO12R_R2_ARCHIVE=1` を設定した場合、バッチはCloudflare Pagesへのデプロイ前にR2へアップロードする。
+Linux VMで `TOKYO12R_R2_ARCHIVE=1` を設定した場合、バッチはCloudflare Pagesへのデプロイ前にR2へアップロードする。
 使用バケットは `TOKYO12R_R2_BUCKET`、`R2_BUCKET`、`CLOUDFLARE_R2_BUCKET` の順に参照し、未指定時は既存の `byzin-nar-results` を使う。
 GitHub Actionsのバックアップ経路では、repository variable `ENABLE_R2_ARCHIVE=true` の場合だけ同じキーへアップロードする。
 R2アップロードは数回リトライし、失敗時はログに残してCloudflare Pagesへの公開デプロイは継続する。
@@ -448,9 +446,9 @@ yearly  = YYYY
 8. Cloudflare Pagesへ `site-dist` を直接デプロイする
 9. 必要に応じてGitHub Actions `workflow_dispatch` をバックアップ経路として呼ぶ
 
-systemd timerで `scripts/jra_oci_batch.py` 相当のバッチを実行する。既存コード名にOCIが残る場合も、実行先はWebARENA Indigo VPSとする。後続でファイル名を `jra_vps_batch.py` へ変更できる状態にしておく。
+systemd timerで `scripts/jra_oci_batch.py` 相当のバッチを実行する。既存コード名にOCIが残る場合も、実行先はローカルLinux VM (`jra-vm`) とする。後続でファイル名を `jra_vps_batch.py` へ変更できる状態にしておく。
 
-手動デプロイ補助として `deploy/jra_deploy.py` と `deploy/jra_deploy.cmd` を用意する。WindowsからWebARENA VPSへSSH接続し、VPS側リポジトリの `git pull --ff-only`、`tokyo12r-feature-update.service` の起動、Cloudflare Pages直接デプロイ後の公開ページ確認を実行する。SSH秘密鍵は一時コピーを作成して使い、スクリプト内には秘密情報を持たせない。
+手動デプロイ補助として `deploy/jra_deploy.py` と `deploy/jra_deploy.cmd` を用意する。WindowsからLinux VM (`jra-vm`) へSSH接続し、VM側リポジトリの `git pull --ff-only`、`tokyo12r-feature-update.service` の起動、Cloudflare Pages直接デプロイ後の公開ページ確認を実行する。SSH秘密鍵は一時コピーを作成して使い、スクリプト内には秘密情報を持たせない。
 
 ## 失敗時の扱い
 

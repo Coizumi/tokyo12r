@@ -12,11 +12,11 @@ import tempfile
 import time
 from pathlib import Path
 from urllib.error import URLError
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 
-DEFAULT_HOST = "161.34.66.248"
-DEFAULT_REMOTE_USER = "ubuntu"
+DEFAULT_HOST = "192.168.1.3"
+DEFAULT_REMOTE_USER = "mmaster"
 DEFAULT_REMOTE_DIR = "/opt/tokyo12r"
 DEFAULT_SERVICE = "tokyo12r-feature-update.service"
 DEFAULT_VERIFY_URL = "https://tokyo12r.byzin.win/"
@@ -27,6 +27,9 @@ def repo_root() -> Path:
 
 
 def default_key_path() -> Path:
+    vm_key = repo_root() / "xtra" / "jra-vm-sshkey.pem"
+    if vm_key.exists():
+        return vm_key
     return repo_root() / "xtra" / "WebARENA" / "webarena_indigo_id_ed25519"
 
 
@@ -120,8 +123,9 @@ def verify_public_page(url: str) -> None:
     separator = "&" if "?" in url else "?"
     verify_url = f"{url}{separator}v={int(time.time())}"
     print(f"+ verify {verify_url}", flush=True)
+    req = Request(verify_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"})
     try:
-        with urlopen(verify_url, timeout=30) as response:
+        with urlopen(req, timeout=30) as response:
             html = response.read().decode("utf-8", errors="replace")
     except URLError as exc:
         raise RuntimeError(f"public page verification failed: {exc}") from exc

@@ -383,13 +383,28 @@ Hyper-V `al10` でcron化する場合も同じAPIを使えるが、API Key/Secre
 - 後続で `scripts/jra_vps_batch.py` にリネームする場合は、systemd unitも同時に更新する
 - SQLiteは `/opt/tokyo12r/var/jra_features.sqlite3` を正とし、バックアップを定期保存する
 
+## ローカルLinux VM (`jra-vm`) への移行 (2026-10)
+
+WebARENA Indigo VPSで運用していたバッチ処理を、ローカルLinux VM（`jra-vm`）へ移行完了。
+
+- **ホストIP**: `192.168.1.3`
+- **ユーザー**: `mmaster`（サービス実行ユーザー: `tokyo12r`）
+- **SSH鍵**: `D:\dev\jra\xtra\jra-vm-sshkey.pem`
+- **デプロイ先**: `/opt/tokyo12r`
+- **systemd**:
+  - `/etc/systemd/system/tokyo12r-feature-update.service`
+  - `/etc/systemd/system/tokyo12r-feature-update.timer` (有効化・稼働中)
+- **環境設定**: `/etc/tokyo12r-feature-pipeline.env`（Cloudflare API Token / Account ID / R2設定）
+- **WebARENA VPS**: インスタンス停止済み、systemd timer無効化済み。
+
 ## 完了条件
 
-- [x] SSH接続できる
+- [x] SSH接続できる (`jra-vm` / `192.168.1.3`)
 - [x] `Asia/Tokyo` が設定されている
-- [x] Git/Python/SQLiteが利用できる
+- [x] Git/Python/SQLite/Node.js 22が利用できる
 - [x] `/opt/tokyo12r` にリポジトリが配置されている
 - [x] `python3 -m py_compile` が成功する
 - [x] `tokyo12r-feature-update.timer` が有効化されている
 - [x] 手動実行で `jra_features.sqlite3` と公開用JSONが生成される
-- [x] Cloudflare Pages直接デプロイ用tokenを `/etc/tokyo12r-feature-pipeline.env` に設定する
+- [x] Cloudflare Pages直接デプロイおよびR2アーカイブが正常動作する
+- [x] WebARENA VPS側のタイマー停止・インスタンス停止完了
