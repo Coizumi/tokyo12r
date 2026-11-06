@@ -15,7 +15,7 @@ from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 
-DEFAULT_HOST = "192.168.1.3"
+DEFAULT_HOST = "192.168.1.6"
 DEFAULT_REMOTE_USER = "mmaster"
 DEFAULT_REMOTE_DIR = "/opt/tokyo12r"
 DEFAULT_SERVICE = "tokyo12r-feature-update.service"
