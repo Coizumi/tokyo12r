@@ -1,4 +1,6 @@
-# JRA OCI Setup
+# JRA OCI Setup (Obsolete)
+
+> **Obsolete / historical reference only.** OCI is not the current TOKYO12R batch environment. Use `jra-vm` (`192.168.1.6`) and consult [specs.md](../specs.md) and [introduce.md](../introduce.md). Do not apply the deployment instructions below to the current service.
 
 This document records the intended OCI placement for the JRA site.
 

@@ -15,7 +15,7 @@ These rules apply to the TOKYO12R repository under this directory.
 
 - TOKYO12R infrastructure is documented in `specs.md`, including the local Linux VM (`jra-vm`), GitHub Actions, and Cloudflare Pages relationship. (Previously operated on WebARENA Indigo VPS).
 - Do not move heavy data collection or historical recalculation into GitHub Actions unless `specs.md` is explicitly changed to allow it.
-- Batch execution runs on the local Linux VM (`jra-vm`, 192.168.1.3) unless the infrastructure section of `specs.md` is changed.
+- Batch execution runs on the local Linux VM (`jra-vm`, 192.168.1.6) unless the infrastructure section of `specs.md` is changed.
 - Cloudflare API tokens, GitHub tokens, and SSH private keys must not be committed.
 - When connecting to the Linux VM/VPS from Windows, prefer using a temporary copy of the SSH private key that is created by the real Windows user with escalated permissions, owned by that real user, and ACL-restricted to that user only. Use that temporary key for `ssh`/`scp`, then restore delete permissions and remove it immediately after the operation. Do not weaken permissions on the source private key.
 

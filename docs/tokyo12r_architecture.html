@@ -114,7 +114,8 @@
 </head>
 <body>
   <header>
-    <h1>TOKYO12R by ZIN 構成図</h1>
+    <h1>TOKYO12R by ZIN 旧構成図（Obsolete）</h1>
+    <p>このページは過去の設計案です。現行環境・取得方針は <a href="../specs.md">specs.md</a> とリポジトリの AGENTS.md を参照してください。</p>
     <div class="note">JRA向け初期構成案 / 調査更新: 2026-06-23 JST</div>
   </header>
   <main>
@@ -189,7 +190,8 @@
     </section>
 
     <section>
-      <h2>全体構成</h2>
+      <h2>旧全体構成（Obsolete）</h2>
+      <p><strong>この構成図と以下の更新フローはOCI時代の旧構想です。現行のバッチ実行先はローカルLinux VM jra-vm（192.168.1.6）です。現行構成は <a href="../specs.md">specs.md</a> を参照してください。</strong></p>
       <pre class="mermaid">
 flowchart LR
   user["利用者<br>ブラウザ"] --> dns["Cloudflare DNS<br>tokyo12r.byzin.win"]
@@ -227,7 +229,7 @@ flowchart LR
     </section>
 
     <section>
-      <h2>更新フロー</h2>
+      <h2>旧更新フロー（Obsolete）</h2>
       <pre class="mermaid">
 sequenceDiagram
   participant Timer as OCI Timer

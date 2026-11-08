@@ -1,8 +1,16 @@
-# TOKYO12R WebARENA Indigo Introduction
+# TOKYO12R 導入・運用メモ
+
+## 現行環境
+
+バッチはローカルLinux VM `jra-vm`（`192.168.1.6`、管理ユーザー `mmaster`、サービスユーザー `tokyo12r`）で実行する。配置先は `/opt/tokyo12r`、公開先はCloudflare Pages、公開JSONの履歴はCloudflare R2。現在の構成とスケジュールは [specs.md](specs.md)、systemdの操作は [deploy/systemd/README.md](deploy/systemd/README.md) を参照する。接続には `xtra/jra-vm-sshkey.pem` の権限を制限した一時コピーを用いる。
+
+## 旧WebARENA導入記録（Obsolete）
+
+以下のWebARENA契約・インスタンス作成・接続・電源制御は過去の記録であり、現行環境に適用しない。OCIについての記述も旧構想である。
 
 ## 採用サービス
 
-TOKYO12R のJRA特徴量パイプラインは、WebARENA Indigo の 2GB Linux VPS を標準実行環境とする。
+当時の標準実行環境はWebARENA Indigoの2GB Linux VPSだった。以下は旧仕様である。
 
 ```text
 service: WebARENA Indigo Linux
@@ -346,9 +354,9 @@ GitHub tokenは、必要最小限の権限で作成し、リポジトリへコ�
 
 2026-07-03時点では `/etc/tokyo12r-feature-pipeline.env` にCloudflare Pages直接デプロイ設定を配置し、VPSバッチ成功後に `site-dist` をCloudflare Pagesへ反映する。
 
-## WebARENA Indigo 電源制御
+## 旧WebARENA Indigo 電源制御（Obsolete）
 
-WebARENA Indigo VPSの自動停止・自動起動は、Windows Task SchedulerからWebARENA Indigo APIを呼び出して行う。
+当時はWindows Task SchedulerからWebARENA Indigo APIを呼び出して自動停止・起動していた。現在は使用しない。
 標準スクリプトは以下。
 
 ```bat
@@ -383,11 +391,11 @@ Hyper-V `al10` でcron化する場合も同じAPIを使えるが、API Key/Secre
 - 後続で `scripts/jra_vps_batch.py` にリネームする場合は、systemd unitも同時に更新する
 - SQLiteは `/opt/tokyo12r/var/jra_features.sqlite3` を正とし、バックアップを定期保存する
 
-## ローカルLinux VM (`jra-vm`) への移行 (2026-10)
+## ローカルLinux VM (`jra-vm`) への移行 (2026-10、現行)
 
 WebARENA Indigo VPSで運用していたバッチ処理を、ローカルLinux VM（`jra-vm`）へ移行完了。
 
-- **ホストIP**: `192.168.1.3`
+- **ホストIP**: `192.168.1.6`（現行）
 - **ユーザー**: `mmaster`（サービス実行ユーザー: `tokyo12r`）
 - **SSH鍵**: `D:\dev\jra\xtra\jra-vm-sshkey.pem`
 - **デプロイ先**: `/opt/tokyo12r`
@@ -399,7 +407,7 @@ WebARENA Indigo VPSで運用していたバッチ処理を、ローカルLinux V
 
 ## 完了条件
 
-- [x] SSH接続できる (`jra-vm` / `192.168.1.3`)
+- [x] SSH接続できる (`jra-vm` / `192.168.1.6`)
 - [x] `Asia/Tokyo` が設定されている
 - [x] Git/Python/SQLite/Node.js 22が利用できる
 - [x] `/opt/tokyo12r` にリポジトリが配置されている

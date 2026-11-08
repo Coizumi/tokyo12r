@@ -1,6 +1,6 @@
-# TOKYO12R VPS systemd units
+# TOKYO12R jra-vm systemd units
 
-These units run the WebARENA Indigo VPS-side JRA feature pipeline.
+These units run the JRA feature pipeline on the local Linux VM `jra-vm` (`192.168.1.6`). WebARENA and OCI are obsolete execution environments.
 Cloudflare Pages direct deploy requires Node.js 22 or newer because Wrangler
 4.x requires it.
 
@@ -10,7 +10,7 @@ Assumed deployment directory:
 /opt/tokyo12r
 ```
 
-Install on the VPS:
+Install on the VM:
 
 ```bash
 sudo timedatectl set-timezone Asia/Tokyo
@@ -30,7 +30,7 @@ sudoedit /etc/tokyo12r-feature-pipeline.env
 
 Set `CLOUDFLARE_PAGES_DEPLOY=1`, `CLOUDFLARE_API_TOKEN`,
 `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_PAGES_PROJECT_NAME=tokyo12r`, and
-`CLOUDFLARE_PAGES_BRANCH=main` so the VPS batch deploys `site-dist` directly
+`CLOUDFLARE_PAGES_BRANCH=main` so the VM batch deploys `site-dist` directly
 to Cloudflare Pages after a successful run.
 
 Cloudflare R2 archive is controlled by the same env file. Set
@@ -56,7 +56,7 @@ temporary R2 failure should not prevent the Cloudflare Pages deployment from
 continuing.
 
 GitHub Actions dispatch remains available as a backup path. Set
-`TOKYO12R_DISPATCH_WORKFLOW=1` and `GITHUB_TOKEN` only when the VPS batch
+`TOKYO12R_DISPATCH_WORKFLOW=1` and `GITHUB_TOKEN` only when the VM batch
 should also trigger the Cloudflare Pages deploy workflow.
 
 Check status:
@@ -72,7 +72,7 @@ Run once manually:
 sudo systemctl start tokyo12r-feature-update.service
 ```
 
-From the Windows workstation, the same VPS-side update can be triggered with
+From the Windows workstation, the same VM-side update can be triggered with
 the manual deploy helper:
 
 ```cmd
@@ -111,3 +111,4 @@ cards, generates `site-dist`, writes private runner data to
 `/opt/tokyo12r/var/oci-data.json`, ingests it into SQLite, and exports
 `site-dist/features-jra.json`. When `TOKYO12R_R2_ARCHIVE=1`, it also archives
 the public `site-dist/public-dataYYYYMMDD.json` to Cloudflare R2.
+The `oci` names are legacy filenames and do not imply an OCI deployment.

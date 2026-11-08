@@ -12,7 +12,7 @@ GitHub Actionsには重いデータ収集や過去データ再計算を載せな
 
 役割分担:
 
-- ローカルLinux VM (`jra-vm` / 192.168.1.3): データ収集、SQLite蓄積、公開用予想/結果データ生成、週/月/年サマリー生成、公開用特徴量ファイル生成
+- ローカルLinux VM (`jra-vm` / 192.168.1.6): データ収集、SQLite蓄積、公開用予想/結果データ生成、週/月/年サマリー生成、公開用特徴量ファイル生成
 - ローカルLinux VM (`jra-vm`): Cloudflare Pagesへの本番デプロイ
 - GitHub Actions: 手動再生成、緊急時、検証用のバックアップデプロイ経路
 - Cloudflare Pages: 静的サイト配信
@@ -23,7 +23,7 @@ GitHub Actionsには重いデータ収集や過去データ再計算を載せな
 
 ```text
 service: Local Linux VM (jra-vm)
-ip: 192.168.1.3
+ip: 192.168.1.6
 user: mmaster (service user: tokyo12r)
 os: Ubuntu 24.04 LTS
 directory: /opt/tokyo12r
@@ -44,7 +44,7 @@ flowchart LR
   user["利用者"] --> pages["Cloudflare Pages<br/>tokyo12r.byzin.win"]
   pages --> html["静的HTML<br/>index.html / resultYYYYMMDD.html"]
 
-  vm["Linux VM<br/>jra-vm (192.168.1.3)"]
+  vm["Linux VM<br/>jra-vm (192.168.1.6)"]
   vm --> systemd["systemd timer<br/>tokyo12r-feature-update.timer"]
   systemd --> batch["JRA特徴量バッチ<br/>scripts/jra_oci_batch.py"]
   batch --> jra["JRA公式データ"]
@@ -289,7 +289,7 @@ text:       #374151
 
 ## 更新スケジュール
 
-VPSのtimezoneを `Asia/Tokyo` に設定する。
+jra-vmのtimezoneを `Asia/Tokyo` に設定する。
 
 通常更新:
 
@@ -308,42 +308,13 @@ VPSのtimezoneを `Asia/Tokyo` に設定する。
 
 公式サイトへの連続アクセスを抑えるため、JRA公式取得時の既定待機時間は `1.2` 秒とする。既存の `public-dataYYYYMMDD.json` で全レースの結果が確定済み、かつ公開生成物より新しい生成入力ファイルがない場合、その日の後続更新は公式取得、SQLite更新、R2保存、Cloudflare Pagesデプロイを行わず正常終了する。
 
-### VPS電源管理（過去のWebARENA運用）
+### 旧WebARENA電源管理
 
-ローカルLinux VMへの移行に伴い、WebARENA APIによる自動起動・停止は不要となった。
-過去のWebARENA Indigo VPS運用時は、Windows Task Schedulerから `deploy/webarena_power.cmd` を実行して停止・起動を行っていた。
-`deploy/webarena_power.py` はWebARENA Indigo APIでアクセストークンを取得し、対象インスタンスの一覧確認、状態確認、起動、停止を行っていた。
-
-秘密情報はリポジトリへコミットしない。既存の以下ファイルを実行時に読む。
-
-```text
-xtra/WebARENA/webarena_apikey.txt
-xtra/WebARENA/webarena_apisecret.txt
-```
-
-標準対象インスタンス名は `tokyo12r-batch-01` とする。インスタンス名が変わる場合は `--instance-name`、または `--instance-id` で明示する。
-
-過去の推奨スケジュール:
-
-```text
-起動: 金曜 21:55 JST
-停止: 火曜 18:00 JST
-```
-
-手動確認コマンド:
-
-```bat
-deploy\webarena_power.cmd list
-deploy\webarena_power.cmd status
-deploy\webarena_power.cmd start --wait
-deploy\webarena_power.cmd stop --wait
-```
-
-Hyper-V `al10` でcron化することも可能だが、API Key/SecretをLinuxゲストへ複製する必要がある。現時点では秘密情報をWindows側に留められるWindows Task Scheduler方式を標準とする。
+WebARENA APIを用いた電源管理は旧運用であり、現行の `jra-vm` には適用しない。過去の手順は [introduce.md](introduce.md) のObsolete記録を参照する。
 
 ## データ保存
 
-VPS上のSQLiteを主ストアとする。
+`jra-vm` 上のSQLiteを主ストアとする。
 
 想定パス:
 
@@ -395,7 +366,7 @@ R2アップロードは数回リトライし、失敗時はログに残してClo
 
 ## 的中結果の蓄積
 
-VPSは、公開済み予想と確定結果を同じSQLiteに保存し、買い目単位の結果データを蓄積する。
+jra-vmは、公開済み予想と確定結果を同じSQLiteに保存し、買い目単位の結果データを蓄積する。
 
 保存単位:
 
@@ -434,7 +405,7 @@ yearly  = YYYY
 
 この文書では、予想ロジックの式、係数、印の選定手順、買い目の生成ルール、的中判定条件を定義しない。グレード競走を含むレース条件別の指数適用範囲も `forcast_for_jra.md` を参照し、実装変更時は同文書を更新する。
 
-## VPSバッチ処理
+## jra-vmバッチ処理
 
 1回の起動で以下を行う。
 
@@ -459,24 +430,24 @@ systemd timerで `scripts/jra_oci_batch.py` 相当のバッチを実行する。
 - JRA出走表詳細HTMLから出走馬が0頭として解析された場合: 詳細HTML取得をリトライし、それでも0頭なら公開HTML生成を失敗させる。1レースだけ予想準備中のまま部分公開しない
 - SQLite破損対策: 更新前にバックアップを作成
 - R2アーカイブ失敗: ログに記録し、公開サイトの更新は継続する
-- Actions dispatch失敗: VPS側バッチは失敗扱いにし、ログで検知
+- Actions dispatch失敗: jra-vm側バッチは失敗扱いにし、ログで検知
 
 ## GitHub Actionsとの接続
 
-GitHub Actionsは過去データDBを持たない。VPSが生成した公開用特徴量ファイルを参照する。
+GitHub Actionsは過去データDBを持たない。jra-vmが生成した公開用特徴量ファイルを参照する。
 
 初期案:
 
-- VPSが `site-dist/features-jra.json` 相当の軽量JSONを生成
+- jra-vmが `site-dist/features-jra.json` 相当の軽量JSONを生成
 - GitHub Actionsは将来的にそのJSONを取得して `jra_site_updater.py` に渡す
 
 より安定した案:
 
 標準案:
 
-- VPSが `site-dist` を生成する
-- VPSがR2へ公開JSONの日次最終版を保存する
-- VPSがWranglerでCloudflare Pagesへ直接デプロイする
+- jra-vmが `site-dist` を生成する
+- jra-vmがR2へ公開JSONの日次最終版を保存する
+- jra-vmがWranglerでCloudflare Pagesへ直接デプロイする
 
 バックアップ案:
 
@@ -488,7 +459,7 @@ GitHub Actionsは過去データDBを持たない。VPSが生成した公開用�
 
 ### Phase 1
 
-- WebARENA Indigo 2GB を契約し、Linux VPSを作成
+- ローカルLinux VM `jra-vm` を用意
 - SSH鍵、ファイアウォール、OS更新、Git/Python/SQLiteを設定
 - 既存リポジトリを `/opt/tokyo12r` に配置
 - SQLiteスキーマを作成
@@ -496,7 +467,7 @@ GitHub Actionsは過去データDBを持たない。VPSが生成した公開用�
 
 ### Phase 2
 
-- WebARENA VPS上でJRA更新バッチを実行する
+- `jra-vm` 上でJRA更新バッチを実行する
 - 公開HTML/JSONを `site-dist` に生成する
 - 公開JSONの日次最終版をCloudflare R2へ保存する
 - Cloudflare Pagesへ直接デプロイする
