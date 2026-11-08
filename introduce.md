@@ -32,8 +32,8 @@ monthly upper limit: 814 JPY
 
 公式ページ:
 
-- WebARENA Indigo: https://web.arena.ne.jp/indigo/
-- Indigo スタートアップガイド: https://help.arena.ne.jp/hc/ja/articles/360049817054
+- WebARENA Indigo: "<https://web.arena.ne.jp/indigo/>"
+- Indigo スタートアップガイド: "<https://help.arena.ne.jp/hc/ja/articles/360049817054>"
 
 ## 契約前に用意するもの
 
