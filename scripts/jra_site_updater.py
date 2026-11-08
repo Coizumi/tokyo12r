@@ -2012,6 +2012,8 @@ def generate(
     date_key = target_date.strftime("%Y%m%d")
     if output.exists():
         for child in output.iterdir():
+            if child.is_file() and re.fullmatch(r"(?:result|scores|public-data)\d{8}\.(?:html|json)", child.name):
+                continue
             if child.is_dir():
                 shutil.rmtree(child)
             else:
